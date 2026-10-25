@@ -55,16 +55,20 @@ jobs:
           set -euo pipefail
           cd project
           printf '%s  %s\n' \
-          '7dbbc6817c52e4ea397e2449555bfc43af92d73baa177d62e61ba936e5b56c21' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
           'e5aacdc3cc8eb9865ccb33ce9a2608fd8a61a4e276c82a67c2eb5159338701fd' 'app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt' \
-          '991625d8ad226191eea194d017f6c93ba77f233db11be2d0ff949870103fa0b5' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' \
-          'f70bc89794101596c5769d680cdc5f28dcb3bb5bf766e6702e5d5296436fcc25' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
           'dc8b52f2d674b6120455bbbfaf2b61216c2b3106d10e96944d6ab87e54b52dd6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
           '0219c0b2061cb2fc52eb4b01590661d6fd701b186ab76a8faa836348def597a2' 'app/src/main/java/ir/personal/chand/data/CacheMaintenance.kt' \
           '8b6041973a8fb930193154c6da8e7b18f7fb93b63a60012dbf9da027b766a3f0' 'app/src/main/java/ir/personal/chand/data/MarketQuotePolicy.kt' \
           '8c40912a2c00bc4b2c8a557e7fe252d41300e6e03b93678501bb3940e3f6506d' 'app/build.gradle.kts' \
           'cf4879b4914bb892c8712afab838b712f029de0266b6137e73f54e19100c3f60' 'app/src/test/java/ir/personal/chand/ui/MarketLiveStatusTest.kt' \
           '165f308340bfc8aaabbdb438c6068a7739dc888b531b032ca2eb19d133ac02d4' 'app/src/test/java/ir/personal/chand/data/MarketQuotePolicyTest.kt' | sha256sum -c -
+          grep -F 'coerceIn(2, 5)' app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'GridCells.Fixed(compactColumns)' app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'repository.cachedSnapshot' app/src/main/java/ir/personal/chand/MainViewModel.kt
+          grep -F 'withTimeoutOrNull(GLOBAL_TGJU_MODULE_TIMEOUT_MS)' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'IRAN_CATALOG_MAX_REFRESH_MS = 100_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'GLOBAL_TGJU_MAX_PAGES = 10' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'TGJU_RESOLVER_RETRY_MS = 60_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
