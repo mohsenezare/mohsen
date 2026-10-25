@@ -80,7 +80,7 @@ jobs:
           grep -F 'coerceIn(2, 4)' app/src/main/java/ir/personal/chand/MainActivity.kt
           grep -F 'GridCells.Fixed(compactColumns)' app/src/main/java/ir/personal/chand/MainActivity.kt
           grep -F 'repository.cachedSnapshot' app/src/main/java/ir/personal/chand/MainViewModel.kt
-          grep -F 'withTimeoutOrNull(GLOBAL_TGJU_MODULE_TIMEOUT_MS)' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'if (System.currentTimeMillis() - startedAt >= GLOBAL_TGJU_MODULE_TIMEOUT_MS) break' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'IRAN_CATALOG_MAX_REFRESH_MS = 100_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'GLOBAL_TGJU_MAX_PAGES = 20' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'TGJU_RESOLVER_RETRY_MS = 60_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
