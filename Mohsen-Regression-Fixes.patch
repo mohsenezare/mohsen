@@ -347,7 +347,7 @@ diff --git a/app/src/main/java/ir/personal/chand/MainViewModel.kt b/app/src/main
 diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
 --- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
 +++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
-@@ -16,12 +16,15 @@
+@@ -16,12 +16,14 @@
  import kotlin.coroutines.resume
  import kotlin.coroutines.resumeWithException
  import kotlinx.coroutines.Dispatchers
@@ -357,13 +357,13 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
  import kotlinx.coroutines.sync.Mutex
  import kotlinx.coroutines.sync.withLock
  import kotlinx.coroutines.withContext
- import kotlinx.coroutines.withTimeoutOrNull
+-import kotlinx.coroutines.withTimeoutOrNull
 +import kotlinx.coroutines.selects.onAwait
 +import kotlinx.coroutines.selects.select
  import okhttp3.OkHttpClient
  import okhttp3.Request
  import okhttp3.MediaType.Companion.toMediaType
-@@ -254,7 +257,10 @@
+@@ -254,7 +256,10 @@
          return snapshotOf(visibleIds).also(::cacheSnapshotThrottled)
      }
  
@@ -375,7 +375,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
          val descriptors = resolveVisibleDescriptors(visibleIds)
          if (descriptors.isEmpty()) return@withContext emptySnapshot()
  
-@@ -269,30 +275,24 @@
+@@ -269,30 +274,24 @@
                  it.source != MarketSource.TGJU && !isStockDescriptor(it)
              }
  
@@ -413,7 +413,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
              val fallbackDescriptors = buildList {
                  descriptors.filter { it.source != MarketSource.TGJU }.forEach(::add)
                  descriptors.filter { it.source == MarketSource.TGJU }.forEach { original ->
-@@ -310,55 +310,84 @@
+@@ -310,55 +309,84 @@
              }.distinctBy(MarketDescriptor::id)
              val tsetmcDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TSETMC }
              val tradingViewDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TRADINGVIEW }
@@ -538,7 +538,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
  
      suspend fun fetchHistory(itemId: String, range: HistoryRange): HistorySeries =
          withContext(Dispatchers.IO) {
-@@ -501,33 +530,63 @@
+@@ -501,33 +529,63 @@
          onProgress: (Int) -> Unit = {}
      ): CatalogRefreshResult = withContext(Dispatchers.IO) {
          val all = linkedMapOf<String, MarketDescriptor>()
@@ -624,7 +624,22 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
          val items = all.values.sortedWith(compareBy<MarketDescriptor> { it.code }.thenBy { it.name })
          synchronized(knownDescriptors) { items.forEach { knownDescriptors[it.id] = it } }
          CatalogRefreshResult(items, complete)
-@@ -627,21 +686,47 @@
+@@ -576,11 +634,9 @@
+         val modules = listOf("markets.global", "markets.crypto")
+         val moduleResults = coroutineScope {
+             modules.mapIndexed { moduleIndex, module -> async {
+-                withTimeoutOrNull(GLOBAL_TGJU_MODULE_TIMEOUT_MS) {
+-                    fetchTgjuCatalogAll(module, maxPages = GLOBAL_TGJU_MAX_PAGES) { pageProgress ->
+-                        onProgress((moduleIndex * 7 + pageProgress * 7 / 100).coerceIn(0, 14))
+-                    }
+-                } ?: CatalogRefreshResult(emptyList(), complete = false)
++                fetchTgjuCatalogAll(module, maxPages = GLOBAL_TGJU_MAX_PAGES) { pageProgress ->
++                    onProgress((moduleIndex * 7 + pageProgress * 7 / 100).coerceIn(0, 14))
++                }
+             } }.map { it.await() }
+         }
+         moduleResults.forEach { result ->
+@@ -627,21 +683,51 @@
      ): CatalogRefreshResult {
          val all = linkedMapOf<String, MarketDescriptor>()
          var complete = false
@@ -632,6 +647,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
 +        var hadPageFailure = false
 +        var page = 1
 +        val batchSize = 3
++        val startedAt = System.currentTimeMillis()
 +        while (page <= maxPages) {
              currentCoroutineContext().ensureActive()
 -            val result = requestResult {
@@ -644,6 +660,9 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
 -            onProgress((page * 100 / maxPages).coerceAtMost(95))
 -            if (!result.hasMore) {
 -                complete = true
++            // Stop starting new batches near the soft deadline; return the valid partial
++            // catalog instead of cancelling the coroutine and discarding it.
++            if (System.currentTimeMillis() - startedAt >= GLOBAL_TGJU_MODULE_TIMEOUT_MS) break
 +            val batchPages = (page..minOf(page + batchSize - 1, maxPages)).toList()
 +            val beforeBatch = all.size
 +            val results = coroutineScope {
@@ -684,7 +703,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
          }
          return CatalogRefreshResult(all.values.toList(), complete)
      }
-@@ -1412,7 +1497,8 @@
+@@ -1412,7 +1498,8 @@
  
      private suspend fun fetchTgjuCatalogModule(module: String, query: String, page: Int, strict: Boolean = false): CatalogModulePage {
          val queryPart = query.trim().takeIf { it.isNotEmpty() }?.let { "&q=${encode(it)}" }.orEmpty()
@@ -694,7 +713,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
          val listPayload = findCatalogListPayload(root)
          if (strict) check(listPayload is JSONArray || listPayload is JSONObject) {
              "TGJU ساختار فهرست معتبر نیست"
-@@ -1420,30 +1506,103 @@
+@@ -1420,30 +1507,103 @@
          val rawItems = objectList(listPayload)
          val items = rawItems
              .filter(::isActiveTgjuRecord)
@@ -813,7 +832,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
      }
  
      private fun isActiveTgjuRecord(value: JSONObject): Boolean {
-@@ -1499,22 +1658,24 @@
+@@ -1499,22 +1659,24 @@
          }
      }
  
@@ -844,7 +863,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
          val category = when {
              stockLike && rawCategory.isNotBlank() -> "بورس ایران · $rawCategory"
              stockLike -> "بورس ایران"
-@@ -1522,7 +1683,7 @@
+@@ -1522,7 +1684,7 @@
              type.contains("global") -> "بازار جهانی"
              else -> "بازار داخلی"
          }
@@ -853,7 +872,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
          val grade = value.optString("grade").trim()
          val s1 = value.optString("s1").trim()
          val code = when {
-@@ -1626,6 +1787,22 @@
+@@ -1626,6 +1788,22 @@
              .url(url)
              .header("Accept", "application/json,text/plain,*/*")
              .header("Cache-Control", "no-cache")
@@ -876,7 +895,7 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
              .header("User-Agent", HTTP_USER_AGENT)
              .build()
          val call = httpClient.newCall(request)
-@@ -1955,8 +2132,8 @@
+@@ -1955,8 +2133,8 @@
          private const val TGJU_RESOLVER_TTL_MS = 24 * 60 * 60 * 1000L
          private const val TGJU_RESOLVER_RETRY_MS = 60_000L
          private const val IRAN_CATALOG_MAX_REFRESH_MS = 100_000L
