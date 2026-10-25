@@ -954,3 +954,23 @@ diff --git a/app/src/main/java/ir/personal/chand/data/CatalogRefresh.kt b/app/sr
              return block()
          }
      }
+diff --git a/app/src/test/java/ir/personal/chand/data/CatalogRefreshTest.kt b/app/src/test/java/ir/personal/chand/data/CatalogRefreshTest.kt
+--- a/app/src/test/java/ir/personal/chand/data/CatalogRefreshTest.kt
++++ b/app/src/test/java/ir/personal/chand/data/CatalogRefreshTest.kt
+@@ -48,14 +48,14 @@
+         }
+     }
+ 
+-    @Test fun rateLimitsAndForbiddenResponsesAreNotRetried() = runBlocking {
++    @Test fun forbiddenResponsesAreNotRetriedButRateLimitsGetOneSpacedRetry() = runBlocking {
+         for (code in listOf(403, 429)) {
+             var attempts = 0
+             try {
+                 CatalogRefresh.retry(0) { attempts++; throw IOException("HTTP $code") }
+                 fail("Must report provider failure")
+             } catch (_: IOException) {
+-                assertEquals(1, attempts)
++                assertEquals(if (code == 429) 2 else 1, attempts)
+             }
+         }
+     }
