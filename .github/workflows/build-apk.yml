@@ -45,6 +45,10 @@ jobs:
           patch -d project -p1 < Mohsen-Startup-Catalog-Compact.patch
           echo "Applied source hashes:"
           sha256sum project/app/src/main/java/ir/personal/chand/MainActivity.kt project/app/src/main/java/ir/personal/chand/MainViewModel.kt project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          echo "Confirming compact cards and nonblocking first-load changes:"
+          grep -nE 'compactColumns|GridCells.Fixed\(compactColumns\)' project/app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -n 'cachedSnapshot' project/app/src/main/java/ir/personal/chand/MainViewModel.kt
+          grep -nE 'GLOBAL_TGJU_MODULE_TIMEOUT_MS|IRAN_CATALOG_MAX_REFRESH_MS|GLOBAL_TGJU_MAX_PAGES|TGJU_RESOLVER_RETRY_MS' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
