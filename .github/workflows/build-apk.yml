@@ -32,37 +32,14 @@ jobs:
         run: |
           set -euo pipefail
           base64 -d TGJU-Primary-Compact-Cache.patch.gz.b64 | gzip -dc > TGJU-Primary-Compact-Cache.patch
-          echo "Decoded patch byte count:"
-          wc -c TGJU-Primary-Compact-Cache.patch
-          echo "Patch file headers:"
-          head -n 12 TGJU-Primary-Compact-Cache.patch
-          echo "Patch change summary:"
-          git apply --stat TGJU-Primary-Compact-Cache.patch || true
-          echo "Patch diff paths:"
-          grep '^diff --git ' TGJU-Primary-Compact-Cache.patch | head -30 || true
           cd project
           git apply --check ../TGJU-Primary-Compact-Cache.patch
           git apply ../TGJU-Primary-Compact-Cache.patch
-          echo "Resulting source changes:"
-          sha256sum app/src/main/java/ir/personal/chand/MainActivity.kt app/src/main/java/ir/personal/chand/MainViewModel.kt app/src/main/java/ir/personal/chand/data/MarketRepository.kt
-          find app/src/main/java/ir/personal/chand -name 'CacheMaintenance.kt' -o -name 'MarketQuotePolicy.kt'
-      - name: Apply TGJU resolver safety follow-up
-        run: |
-          cd project
-          git apply --check ../TGJU-Resolver-Safety.patch
-          git apply ../TGJU-Resolver-Safety.patch
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
         run: cp overrides/MarketLiveStatusTest.kt project/app/src/test/java/ir/personal/chand/ui/MarketLiveStatusTest.kt
-      - name: Upload staged source snapshot for verification
-        uses: actions/upload-artifact@v4
-        with:
-          name: staged-source-snapshot
-          path: project/
-          if-no-files-found: error
       - name: Verify feature source and locked LIVE files
-        continue-on-error: true
         run: |
           set -euo pipefail
           cd project
