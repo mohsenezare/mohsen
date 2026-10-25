@@ -32,9 +32,11 @@ jobs:
         run: |
           set -euo pipefail
           base64 -d TGJU-Primary-Compact-Cache.patch.gz.b64 | gzip -dc > TGJU-Primary-Compact-Cache.patch
-          cd project
-          git apply --check ../TGJU-Primary-Compact-Cache.patch
-          git apply ../TGJU-Primary-Compact-Cache.patch
+          patch -d project --dry-run -p1 < TGJU-Primary-Compact-Cache.patch
+          patch -d project -p1 < TGJU-Primary-Compact-Cache.patch
+          sha256sum project/app/src/main/java/ir/personal/chand/MainActivity.kt project/app/src/main/java/ir/personal/chand/MainViewModel.kt project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          test -f project/app/src/main/java/ir/personal/chand/data/CacheMaintenance.kt
+          test -f project/app/src/main/java/ir/personal/chand/data/MarketQuotePolicy.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
