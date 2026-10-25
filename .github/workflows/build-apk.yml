@@ -1,0 +1,59 @@
+name: Build Mohsen LIVE Emerald APK
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout dedicated repository
+        uses: actions/checkout@v4
+      - name: Extract staged Android source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p project
+          unzip -q source-base.zip -d project
+          find project -name gradlew -type f -print
+          test -f project/gradlew
+      - name: Apply LIVE Emerald-only patch
+        run: |
+          cd project
+          git apply --check ../LIVE-Emerald.patch
+          git apply ../LIVE-Emerald.patch
+      - name: Verify key files match last approved source
+        run: |
+          set -euo pipefail
+          cd project
+          printf '%s  %s\n' \
+          '89e549dc0bf09c16b0ac341dc2f2e51a9b922cd1e97d1bb57ea87497f8ba548e' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
+          'e5aacdc3cc8eb9865ccb33ce9a2608fd8a61a4e276c82a67c2eb5159338701fd' 'app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt' \
+          'c042db5b6ab3a1c825f6bf24b15c03a1614003334c0dbf3443dabb26aca9e2b8' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' \
+          'b43d595d01a67452a3b37d89937e35a9ac280b87d3d20544fa23b57d7ac35563' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+          '8c40912a2c00bc4b2c8a557e7fe252d41300e6e03b93678501bb3940e3f6506d' 'app/build.gradle.kts' | sha256sum -c -
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Build and test debug APK
+        working-directory: project
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:assembleDebug --stacktrace --no-daemon
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mohsen-live-emerald-debug-apk
+          path: project/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
