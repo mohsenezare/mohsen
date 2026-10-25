@@ -1,0 +1,426 @@
+diff --git a/app/src/main/java/ir/personal/chand/MainActivity.kt b/app/src/main/java/ir/personal/chand/MainActivity.kt
+index 552b064..7a47e3b 100644
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -356,7 +356,9 @@ private fun MarketGrid(
+     val gridState = rememberLazyGridState()
+     val density = androidx.compose.ui.platform.LocalDensity.current
+     val configuration = LocalConfiguration.current
+-    val compactColumns = ((configuration.screenWidthDp - 28 + 10) / 118).coerceAtLeast(2)
++    // Fixed columns are essential here: Adaptive expands each cell to fill the row,
++    // so the previous 108dp minimum still produced almost full-size cards on phones.
++    val compactColumns = ((configuration.screenWidthDp - 20 + 6) / 94).coerceIn(2, 5)
+     val gridLayout = gridMode || compactMode
+     val pullRefreshConnection = remember(gridState, onPullRefresh, density) {
+         object : NestedScrollConnection {
+@@ -402,11 +404,12 @@ private fun MarketGrid(
+         }
+     }
+     LazyVerticalGrid(
+-        columns = if (compactMode) GridCells.Adaptive(108.dp) else GridCells.Fixed(if (gridMode) 2 else 1),
++        columns = if (compactMode) GridCells.Fixed(compactColumns) else GridCells.Fixed(if (gridMode) 2 else 1),
+         state = gridState,
+-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 10.dp),
+-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+-        verticalArrangement = Arrangement.spacedBy(10.dp),
++        contentPadding = if (compactMode) PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 8.dp)
++            else PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 10.dp),
++        horizontalArrangement = Arrangement.spacedBy(if (compactMode) 5.dp else 10.dp),
++        verticalArrangement = Arrangement.spacedBy(if (compactMode) 5.dp else 10.dp),
+         modifier = Modifier
+             .fillMaxSize()
+             .background(
+@@ -427,7 +430,7 @@ private fun MarketGrid(
+                     .fillMaxWidth()
+                     .then(
+                         when {
+-                            compactMode -> Modifier.aspectRatio(0.82f)
++                            compactMode -> Modifier.aspectRatio(0.92f)
+                             gridMode -> Modifier.aspectRatio(1.04f)
+                             else -> Modifier.heightIn(min = 220.dp)
+                         }
+@@ -518,10 +521,10 @@ private fun MarketCard(
+                 else -> 20.sp
+             }
+             val priceFontSize = when {
+-                dense && priceText.length >= 16 -> 10.sp
+-                dense && priceText.length >= 13 -> 11.sp
+-                dense && priceText.length >= 10 -> 12.sp
+-                dense -> 14.sp
++                dense && priceText.length >= 16 -> 8.sp
++                dense && priceText.length >= 13 -> 9.sp
++                dense && priceText.length >= 10 -> 10.sp
++                dense -> 12.sp
+                 compact && priceText.length >= 16 -> 19.sp
+                 compact && priceText.length >= 13 -> 22.sp
+                 compact && priceText.length >= 10 -> 25.sp
+diff --git a/app/src/main/java/ir/personal/chand/MainViewModel.kt b/app/src/main/java/ir/personal/chand/MainViewModel.kt
+index 15f7068..0fccc88 100644
+--- a/app/src/main/java/ir/personal/chand/MainViewModel.kt
++++ b/app/src/main/java/ir/personal/chand/MainViewModel.kt
+@@ -110,13 +110,17 @@ repository.knownDescriptors().forEach { descriptorCache[it.id] = it }
+ savedIranMarketCatalog.forEach { descriptorCache[it.id] = it }
+ savedIranStockCatalog.forEach { descriptorCache[it.id] = it }
+ savedGlobalMarketCatalog.forEach { descriptorCache[it.id] = it }
++val cached = repository.cachedSnapshot(_uiState.value.settings.visibleIds)
++if (cached.items.any(MarketItem::isAvailable)) {
++    _uiState.update { it.copy(snapshot = cached, loading = false) }
++}
+ CacheMaintenance.schedule(application, _uiState.value.settings.autoClearCache)
+ }
+ 
+     fun startPolling() {
+         if (pollingJob?.isActive == true) return
+         pollingJob = viewModelScope.launch {
+-            var firstLoad = _uiState.value.snapshot == null
++            var firstLoad = _uiState.value.snapshot?.items?.none(MarketItem::isAvailable) ?: true
+             var streamsStarted = false
+             while (isActive) {
+                 val startedAt = SystemClock.elapsedRealtime()
+@@ -487,6 +491,13 @@ fun setAutoClearCache(enabled: Boolean) = updateSettings { copy(autoClearCache =
+     fun setVisibleIds(ids: List<String>) {
+         val ordered = repository.rememberSelection(ids, descriptorCache.values)
+         updateSettings { copy(visibleIds = ordered) }
++        val cached = repository.cachedSnapshot(ordered)
++        _uiState.update { current ->
++            current.copy(
++                snapshot = cached,
++                loading = if (cached.items.any(MarketItem::isAvailable)) false else current.loading
++            )
++        }
+         if (_uiState.value.chart.itemId !in ordered) clearChart()
+         if (pollingJob?.isActive == true) {
+             stopPolling()
+@@ -687,6 +698,7 @@ fun setAutoClearCache(enabled: Boolean) = updateSettings { copy(autoClearCache =
+ 
+     override fun onCleared() {
+         stopPolling()
++        repository.close()
+         super.onCleared()
+     }
+ 
+diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+index b9f3847..bc4a976 100644
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -2,6 +2,10 @@ package ir.personal.chand.data
+ 
+ import android.content.Context
+ import kotlinx.coroutines.CancellationException
++import kotlinx.coroutines.CoroutineScope
++import kotlinx.coroutines.SupervisorJob
++import kotlinx.coroutines.cancel
++import kotlinx.coroutines.launch
+ import kotlinx.coroutines.suspendCancellableCoroutine
+ import kotlinx.coroutines.currentCoroutineContext
+ import kotlinx.coroutines.ensureActive
+@@ -17,6 +21,7 @@ import kotlinx.coroutines.coroutineScope
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
+ import kotlinx.coroutines.withContext
++import kotlinx.coroutines.withTimeoutOrNull
+ import okhttp3.OkHttpClient
+ import okhttp3.Request
+ import okhttp3.MediaType.Companion.toMediaType
+@@ -52,6 +57,11 @@ class MarketRepository(
+     private val historyMutex = Mutex()
+     private val historyCache = mutableMapOf<String, HistoryCacheEntry>()
+     private val tgjuFallbackCache = linkedMapOf<String, TgjuFallbackCacheEntry>()
++    // TGJU alias discovery must never block the first visible quote. It runs in a
++    // repository-owned background scope and is reused by the next reconciliation.
++    private val tgjuResolverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
++    private val pendingTgjuResolverIds = linkedSetOf<String>()
++    private val tgjuResolverAttemptAt = mutableMapOf<String, Long>()
+     @Volatile private var tgjuPrimaryValidIds: Set<String> = emptySet()
+     private val stockCatalogMutex = Mutex()
+     private var stockCatalogLoadedAt = 0L
+@@ -133,6 +143,13 @@ class MarketRepository(
+         knownDescriptors.values.toList()
+     }
+ 
++    /** Snapshot from the last valid cached quotes; safe to render before networking finishes. */
++    fun cachedSnapshot(visibleIds: List<String>): MarketSnapshot = snapshotOf(visibleIds)
++
++    fun close() {
++        tgjuResolverScope.cancel()
++    }
++
+     fun startLiveStream(
+         onState: (LiveConnectionState) -> Unit,
+         onTicks: (List<StreamTick>) -> Unit
+@@ -252,12 +269,15 @@ class MarketRepository(
+                 it.source != MarketSource.TGJU && !isStockDescriptor(it)
+             }
+ 
+-            // Discover TGJU equivalents only where the TGJU catalog confirms the instrument.
+-            // Positive and negative matches are cached for 24 hours to avoid repeated lookups.
++            // Resolve only cached/local TGJU equivalents on the critical path. Remote
++            // alias discovery is scheduled separately so it cannot hold up the first quote.
+             val tgjuAliases = resolveTgjuFallbackDescriptors(externalNonStock)
+             val tgjuQueryDescriptors = (nativeTgjuDescriptors + tgjuAliases.values)
+                 .distinctBy(MarketDescriptor::id)
+ 
++            // Start all provider requests together. In the old order, the app waited for
++            // TGJU before even starting fallback providers, adding a full network timeout
++            // to symbols that TGJU does not publish.
+             val tgjuQuotes = async {
+                 if (tgjuQueryDescriptors.isEmpty()) emptyList()
+                 else requestResult {
+@@ -271,12 +291,8 @@ class MarketRepository(
+                 }.getOrDefault(emptyList())
+             }
+ 
+-            val primaryItems = MarketQuotePolicy.chooseByPriority(tgjuQuotes.await(), tgjuStocks.await())
+-            val primaryIds = primaryItems.mapTo(linkedSetOf(), MarketItem::id)
+-            tgjuPrimaryValidIds = primaryIds
+-
+-            // Existing TSETMC/TradingView sources are fallback-only for instruments that
+-            // TGJU did not return with a valid positive price in this refresh.
++            // TSETMC/TradingView are fallbacks only. Starting them in parallel is safe:
++            // chooseByPriority below always selects a valid TGJU quote over a fallback.
+             val fallbackDescriptors = buildList {
+                 descriptors.filter { it.source != MarketSource.TGJU }.forEach(::add)
+                 descriptors.filter { it.source == MarketSource.TGJU }.forEach { original ->
+@@ -291,8 +307,7 @@ class MarketRepository(
+                         ))
+                     }
+                 }
+-            }.distinctBy(MarketDescriptor::id).filterNot { it.id in primaryIds }
+-
++            }.distinctBy(MarketDescriptor::id)
+             val tsetmcDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TSETMC }
+             val tradingViewDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TRADINGVIEW }
+             val tsetmcRequest = async {
+@@ -306,6 +321,9 @@ class MarketRepository(
+                     .getOrDefault(emptyList())
+             }
+ 
++            val primaryItems = MarketQuotePolicy.chooseByPriority(tgjuQuotes.await(), tgjuStocks.await())
++            val primaryIds = primaryItems.mapTo(linkedSetOf(), MarketItem::id)
++            tgjuPrimaryValidIds = primaryIds
+             val fallbackItems = tsetmcRequest.await() + tradingViewRequest.await()
+             val freshItems = MarketQuotePolicy.chooseByPriority(primaryItems, fallbackItems)
+ 
+@@ -484,8 +502,11 @@ class MarketRepository(
+     ): CatalogRefreshResult = withContext(Dispatchers.IO) {
+         val all = linkedMapOf<String, MarketDescriptor>()
+         var complete = false
++        val startedAt = System.currentTimeMillis()
+         for (page in 1..60) {
+             currentCoroutineContext().ensureActive()
++            // Return a clearly marked partial list instead of timing out the entire button.
++            if (System.currentTimeMillis() - startedAt >= IRAN_CATALOG_MAX_REFRESH_MS) break
+             val response = requestResult {
+                 CatalogRefresh.retry { fetchTgjuCatalogModule("markets.internal", "", page, strict = true) }
+             }
+@@ -550,17 +571,26 @@ class MarketRepository(
+         var completed = 0
+         var lastFailure: Throwable? = null
+ 
+-        // TGJU global/crypto catalogs are primary; TradingView remains the fallback catalog.
+-        listOf("markets.global", "markets.crypto").forEachIndexed { moduleIndex, module ->
+-            val moduleResult = fetchTgjuCatalogAll(module, maxPages = 40) { pageProgress ->
+-                onProgress((moduleIndex * 8 + pageProgress * 8 / 100).coerceIn(0, 15))
+-            }
+-            moduleResult.items.forEach { found[it.id] = it }
+-            if (!moduleResult.complete) tgjuComplete = false
++        // Fetch both TGJU modules concurrently with a hard per-module budget. A slow
++        // pagination endpoint must not consume the whole Settings update timeout.
++        val modules = listOf("markets.global", "markets.crypto")
++        val moduleResults = coroutineScope {
++            modules.mapIndexed { moduleIndex, module -> async {
++                withTimeoutOrNull(GLOBAL_TGJU_MODULE_TIMEOUT_MS) {
++                    fetchTgjuCatalogAll(module, maxPages = GLOBAL_TGJU_MAX_PAGES) { pageProgress ->
++                        onProgress((moduleIndex * 7 + pageProgress * 7 / 100).coerceIn(0, 14))
++                    }
++                } ?: CatalogRefreshResult(emptyList(), complete = false)
++            } }.map { it.await() }
++        }
++        moduleResults.forEach { result ->
++            result.items.forEach { found[it.id] = it }
++            if (!result.complete) tgjuComplete = false
+         }
+ 
+-        val seeds = (('A'..'Z').map { it.toString() } + ('0'..'9').map { it.toString() } +
+-            listOf("USD", "EUR", "GBP", "JPY", "CHF", "BTC", "ETH", "XAU", "XAG", "OIL", "BRENT", "INDEX", "ETF")).distinct()
++        // TGJU provides the main global catalog. A small representative fallback search
++        // set avoids the old 36+ serial TradingView searches that often exceeded 180s.
++        val seeds = listOf("XAU", "XAG", "OIL", "BTC", "ETH", "EURUSD", "AAPL", "SPX", "NASDAQ", "MSFT", "DXY", "USOIL")
+         // Four concurrent searches cap server load and avoid a long serial queue.
+         seeds.chunked(4).forEach { batch ->
+             val results = coroutineScope {
+@@ -687,29 +717,90 @@ class MarketRepository(
+             descriptor.category.contains("بورس ایران", ignoreCase = true) ||
+             descriptor.category.contains("سهام", ignoreCase = true)
+ 
+-    private suspend fun resolveTgjuFallbackDescriptors(
++    private fun resolveTgjuFallbackDescriptors(
+         descriptors: List<MarketDescriptor>
+-    ): Map<String, MarketDescriptor> = coroutineScope {
+-        descriptors.distinctBy(MarketDescriptor::id).chunked(4).flatMap { batch ->
+-            batch.map { descriptor -> async { descriptor.id to resolveTgjuFallbackDescriptor(descriptor) } }
+-                .map { it.await() }
+-        }.mapNotNull { (id, descriptor) -> descriptor?.let { id to it } }.toMap()
+-    }
+-
+-    private suspend fun resolveTgjuFallbackDescriptor(original: MarketDescriptor): MarketDescriptor? {
++    ): Map<String, MarketDescriptor> {
+         val now = System.currentTimeMillis()
+-        val cached = synchronized(tgjuFallbackCache) {
+-            tgjuFallbackCache[original.id]?.takeIf { now - it.checkedAtMillis < TGJU_RESOLVER_TTL_MS }
++        val resolved = linkedMapOf<String, MarketDescriptor>()
++        val unresolved = mutableListOf<MarketDescriptor>()
++        descriptors.distinctBy(MarketDescriptor::id).forEach { original ->
++            val cached = synchronized(tgjuFallbackCache) {
++                tgjuFallbackCache[original.id]?.takeIf { now - it.checkedAtMillis < TGJU_RESOLVER_TTL_MS }
++            }
++            if (cached != null) {
++                cached.descriptor?.let { resolved[original.id] = it }
++                return@forEach
++            }
++            val local = findKnownTgjuEquivalent(original)
++            if (local != null) {
++                val mapped = mapToTgjuDescriptor(original, local)
++                resolved[original.id] = mapped
++                synchronized(tgjuFallbackCache) {
++                    tgjuFallbackCache[original.id] = TgjuFallbackCacheEntry(now, mapped)
++                }
++            } else {
++                val lastAttempt = synchronized(tgjuResolverAttemptAt) { tgjuResolverAttemptAt[original.id] ?: 0L }
++                if (now - lastAttempt >= TGJU_RESOLVER_RETRY_MS) unresolved += original
++            }
+         }
+-        if (cached != null) return cached.descriptor
++        if (resolved.isNotEmpty()) persistTgjuFallbackCache()
++        scheduleTgjuFallbackResolution(unresolved)
++        return resolved
++    }
+ 
+-        val local = synchronized(knownDescriptors) {
++    private fun findKnownTgjuEquivalent(original: MarketDescriptor): MarketDescriptor? =
++        synchronized(knownDescriptors) {
+             (knownDescriptors.values + builtInDescriptors).distinctBy(MarketDescriptor::id)
+                 .firstOrNull { candidate ->
+                     candidate.source == MarketSource.TGJU &&
+                         (isSameInstrument(original, candidate) || isKnownTgjuAlias(original, candidate))
+                 }
+         }
++
++    private fun mapToTgjuDescriptor(original: MarketDescriptor, candidate: MarketDescriptor): MarketDescriptor =
++        candidate.copy(
++            id = original.id,
++            name = original.name,
++            code = original.code,
++            symbol = original.symbol,
++            source = MarketSource.TGJU,
++            category = original.category,
++            unit = candidate.unit.ifBlank { original.unit }
++        )
++
++    private fun scheduleTgjuFallbackResolution(descriptors: List<MarketDescriptor>) {
++        val accepted = synchronized(pendingTgjuResolverIds) {
++            descriptors.filter { pendingTgjuResolverIds.add(it.id) }
++        }
++        if (accepted.isEmpty()) return
++        val startedAt = System.currentTimeMillis()
++        synchronized(tgjuResolverAttemptAt) { accepted.forEach { tgjuResolverAttemptAt[it.id] = startedAt } }
++        tgjuResolverScope.launch {
++            try {
++                accepted.chunked(4).forEach { batch ->
++                    coroutineScope {
++                        batch.map { descriptor -> async { resolveTgjuFallbackDescriptor(descriptor) } }
++                            .forEach { it.await() }
++                    }
++                }
++            } catch (cancelled: CancellationException) {
++                throw cancelled
++            } catch (_: Exception) {
++                // A failed discovery is retried by a later price reconciliation.
++            } finally {
++                synchronized(pendingTgjuResolverIds) { accepted.forEach { pendingTgjuResolverIds.remove(it.id) } }
++            }
++        }
++    }
++
++    private suspend fun resolveTgjuFallbackDescriptor(original: MarketDescriptor): MarketDescriptor? {
++        val now = System.currentTimeMillis()
++        val cached = synchronized(tgjuFallbackCache) {
++            tgjuFallbackCache[original.id]?.takeIf { now - it.checkedAtMillis < TGJU_RESOLVER_TTL_MS }
++        }
++        if (cached != null) return cached.descriptor
++
++        val local = findKnownTgjuEquivalent(original)
+         var allLookupRequestsSucceeded = local != null
+         val found = local ?: run {
+             val modules = when {
+@@ -740,17 +831,7 @@ class MarketRepository(
+             matched
+         }
+ 
+-        val mapped = found?.let { candidate ->
+-            candidate.copy(
+-                id = original.id,
+-                name = original.name,
+-                code = original.code,
+-                symbol = original.symbol,
+-                source = MarketSource.TGJU,
+-                category = original.category,
+-                unit = candidate.unit.ifBlank { original.unit }
+-            )
+-        }
++        val mapped = found?.let { mapToTgjuDescriptor(original, it) }
+         // Cache a positive match, or a negative match only when TGJU answered every
+         // resolver request. Network failures must not suppress future TGJU retries.
+         if (mapped != null || allLookupRequestsSucceeded) {
+@@ -1332,10 +1413,11 @@ class MarketRepository(
+     private suspend fun fetchTgjuCatalogModule(module: String, query: String, page: Int, strict: Boolean = false): CatalogModulePage {
+         val queryPart = query.trim().takeIf { it.isNotEmpty() }?.let { "&q=${encode(it)}" }.orEmpty()
+         val root = JSONObject(httpGet("$TGJU_API/v1/newsearch?module=$module&page=$page$queryPart", 8_000))
+-        if (strict) check(root.opt("list") is JSONArray || root.opt("list") is JSONObject) {
++        val listPayload = findCatalogListPayload(root)
++        if (strict) check(listPayload is JSONArray || listPayload is JSONObject) {
+             "TGJU ساختار فهرست معتبر نیست"
+         }
+-        val rawItems = objectList(root.opt("list"))
++        val rawItems = objectList(listPayload)
+         val items = rawItems
+             .filter(::isActiveTgjuRecord)
+             .mapNotNull(::parseTgjuDescriptor)
+@@ -1344,6 +1426,26 @@ class MarketRepository(
+         return CatalogModulePage(items, !last && (if (strict) rawItems.isNotEmpty() else items.isNotEmpty()))
+     }
+ 
++    private fun findCatalogListPayload(root: JSONObject): Any? {
++        fun unwrap(value: Any?, depth: Int = 0): Any? {
++            if (depth > 3) return null
++            return when (value) {
++                is JSONArray -> value
++                is JSONObject -> {
++                    val recordKeys = listOf("id", "name", "title", "instrument", "closingPrice", "sourceKey", "price")
++                    if (recordKeys.any(value::has)) value
++                    else {
++                        val nestedKeys = listOf("list", "items", "results", "data", "result")
++                        nestedKeys.firstNotNullOfOrNull { key -> unwrap(value.opt(key), depth + 1) } ?: value
++                    }
++                }
++                else -> null
++            }
++        }
++        val keys = listOf("list", "items", "results", "data", "result")
++        return keys.firstNotNullOfOrNull { key -> unwrap(root.opt(key)) }
++    }
++
+     private fun isActiveTgjuRecord(value: JSONObject): Boolean {
+         val type = value.optString("type").lowercase(Locale.ROOT)
+         val category = value.optString("category").lowercase(Locale.ROOT)
+@@ -1851,6 +1953,10 @@ class MarketRepository(
+         private const val STOCK_CATALOG_TTL_MS = 2 * 60_000L
+         private const val TGJU_RESOLVER_CACHE_KEY = "tgju_fallback_resolver_v1"
+         private const val TGJU_RESOLVER_TTL_MS = 24 * 60 * 60 * 1000L
++        private const val TGJU_RESOLVER_RETRY_MS = 60_000L
++        private const val IRAN_CATALOG_MAX_REFRESH_MS = 100_000L
++        private const val GLOBAL_TGJU_MODULE_TIMEOUT_MS = 35_000L
++        private const val GLOBAL_TGJU_MAX_PAGES = 10
+         private const val STOCK_PAGE_SIZE = 100
+         private const val TSETMC_API = "https://cdn.tsetmc.com"
+         private const val TSETMC_LEGACY_INIT = "https://old.tsetmc.com/tsev2/data/MarketWatchInit.aspx?h=0&r=0"

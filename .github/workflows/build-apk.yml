@@ -1,4 +1,4 @@
-name: Build Mohsen TGJU Primary + Compact UI APK
+name: Build Mohsen Startup Speed + Catalog + Compact Cards APK
 on:
   push:
     branches: [main]
@@ -37,6 +37,13 @@ jobs:
           sha256sum project/app/src/main/java/ir/personal/chand/MainActivity.kt project/app/src/main/java/ir/personal/chand/MainViewModel.kt project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           test -f project/app/src/main/java/ir/personal/chand/data/CacheMaintenance.kt
           test -f project/app/src/main/java/ir/personal/chand/data/MarketQuotePolicy.kt
+      - name: Apply startup speed, catalog update and true compact-card fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd project
+          git apply --check ../Mohsen-Startup-Catalog-Compact.patch
+          git apply ../Mohsen-Startup-Catalog-Compact.patch
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -46,10 +53,10 @@ jobs:
           set -euo pipefail
           cd project
           printf '%s  %s\n' \
-          'c91914136c6e3819f553057feaccd7124f6f7ef64d42900f3782b6d5982b0c39' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
+          '7dbbc6817c52e4ea397e2449555bfc43af92d73baa177d62e61ba936e5b56c21' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
           'e5aacdc3cc8eb9865ccb33ce9a2608fd8a61a4e276c82a67c2eb5159338701fd' 'app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt' \
-          '97b6f7f243fadaa093da2cce5cb4085802db9ace721379900a37b4ef22265b47' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' \
-          '84e9baebc8118c50370e00629dcaaaadb5f0a88f17fbf4725dc2b8434d6a991b' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+          '991625d8ad226191eea194d017f6c93ba77f233db11be2d0ff949870103fa0b5' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' \
+          'f70bc89794101596c5769d680cdc5f28dcb3bb5bf766e6702e5d5296436fcc25' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
           'dc8b52f2d674b6120455bbbfaf2b61216c2b3106d10e96944d6ab87e54b52dd6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
           '0219c0b2061cb2fc52eb4b01590661d6fd701b186ab76a8faa836348def597a2' 'app/src/main/java/ir/personal/chand/data/CacheMaintenance.kt' \
           '8b6041973a8fb930193154c6da8e7b18f7fb93b63a60012dbf9da027b766a3f0' 'app/src/main/java/ir/personal/chand/data/MarketQuotePolicy.kt' \
@@ -83,6 +90,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-tgju-primary-compact-cache-debug-apk
+          name: mohsen-startup-catalog-compact-fixes-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
