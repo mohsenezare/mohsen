@@ -1,0 +1,917 @@
+diff --git a/app/src/main/java/ir/personal/chand/MainActivity.kt b/app/src/main/java/ir/personal/chand/MainActivity.kt
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -61,6 +61,7 @@
+ import androidx.compose.material.icons.filled.Search
+ import androidx.compose.material.icons.filled.Settings
+ import androidx.compose.material.icons.filled.ViewAgenda
++import androidx.compose.material.icons.filled.ViewCompact
+ import androidx.compose.material3.AlertDialog
+ import androidx.compose.material3.Card
+ import androidx.compose.material3.CardDefaults
+@@ -230,11 +231,14 @@
+ 
+             ControlBar(
+                 gridMode = state.settings.gridMode,
++                compactMode = state.settings.compactMode,
+                 onAdd = {
+                     viewModel.loadCatalog(CatalogSource.MARKETS)
+                     manageOpen = true
+                 },
+-                onToggleLayout = { viewModel.setGridMode(!state.settings.gridMode) },
++                onSelectList = { viewModel.setGridMode(false) },
++                onSelectGrid = { viewModel.setGridMode(true) },
++                onSelectCompact = { viewModel.setCompactMode(true) },
+                 onSettings = { settingsOpen = true }
+             )
+         }
+@@ -356,9 +360,9 @@
+     val gridState = rememberLazyGridState()
+     val density = androidx.compose.ui.platform.LocalDensity.current
+     val configuration = LocalConfiguration.current
+-    // Fixed columns are essential here: Adaptive expands each cell to fill the row,
+-    // so the previous 108dp minimum still produced almost full-size cards on phones.
+-    val compactColumns = ((configuration.screenWidthDp - 20 + 6) / 94).coerceIn(2, 5)
++    // Keep compact cards readable: three columns on common phones, four only on wide screens.
++    // The previous four/five-column sizing made text disproportionately tiny.
++    val compactColumns = ((configuration.screenWidthDp - 20 + 6) / 112).coerceIn(2, 4)
+     val gridLayout = gridMode || compactMode
+     val pullRefreshConnection = remember(gridState, onPullRefresh, density) {
+         object : NestedScrollConnection {
+@@ -430,7 +434,7 @@
+                     .fillMaxWidth()
+                     .then(
+                         when {
+-                            compactMode -> Modifier.aspectRatio(0.92f)
++                            compactMode -> Modifier.aspectRatio(0.90f)
+                             gridMode -> Modifier.aspectRatio(1.04f)
+                             else -> Modifier.heightIn(min = 220.dp)
+                         }
+@@ -499,7 +503,7 @@
+     val lightMode = MaterialTheme.colorScheme.background.luminance() > 0.5f
+     Card(
+         onClick = onClick,
+-        shape = RoundedCornerShape(when { compactMode -> 14.dp; gridMode -> 28.dp; else -> 24.dp }),
++        shape = RoundedCornerShape(when { compactMode -> 12.dp; gridMode -> 28.dp; else -> 24.dp }),
+         colors = CardDefaults.cardColors(
+             containerColor = if (lightMode) Color(0xFFFDFDFC) else ChandCard
+         ),
+@@ -513,18 +517,18 @@
+             val changeText = MarketFormatting.change(item)
+             val longName = item.name.length > if (compact) 11 else 16
+             val nameFontSize = when {
+-                dense && longName -> 8.sp
+-                dense -> 9.sp
++                dense && longName -> 9.5.sp
++                dense -> 11.sp
+                 compact && longName -> 13.sp
+                 compact -> 15.sp
+                 longName -> 17.sp
+                 else -> 20.sp
+             }
+             val priceFontSize = when {
+-                dense && priceText.length >= 16 -> 8.sp
+-                dense && priceText.length >= 13 -> 9.sp
+-                dense && priceText.length >= 10 -> 10.sp
+-                dense -> 12.sp
++                dense && priceText.length >= 17 -> 9.sp
++                dense && priceText.length >= 14 -> 10.sp
++                dense && priceText.length >= 11 -> 11.sp
++                dense -> 13.sp
+                 compact && priceText.length >= 16 -> 19.sp
+                 compact && priceText.length >= 13 -> 22.sp
+                 compact && priceText.length >= 10 -> 25.sp
+@@ -535,8 +539,8 @@
+                 else -> 40.sp
+             }
+             val changeFontSize = when {
+-                dense && changeText.length >= 9 -> 7.sp
+-                dense -> 8.sp
++                dense && changeText.length >= 10 -> 8.sp
++                dense -> 9.5.sp
+                 compact && changeText.length >= 9 -> 14.sp
+                 compact -> 16.sp
+                 changeText.length >= 11 -> 18.sp
+@@ -546,15 +550,15 @@
+             Column(
+                 modifier = Modifier
+                     .fillMaxSize()
+-                    .padding(when { dense -> 6.dp; compact -> 13.dp; else -> 17.dp }),
++                    .padding(when { dense -> 7.dp; compact -> 13.dp; else -> 17.dp }),
+                 verticalArrangement = Arrangement.SpaceBetween
+             ) {
+                 Row(
+                     modifier = Modifier.fillMaxWidth(),
+                     verticalAlignment = Alignment.Top
+                 ) {
+-                    MarketCardBadge(item, Modifier.size(when { dense -> 22.dp; compact -> 43.dp; else -> 52.dp }), dense)
+-                    Spacer(Modifier.width(when { dense -> 4.dp; compact -> 9.dp; else -> 12.dp }))
++                    MarketCardBadge(item, Modifier.size(when { dense -> 27.dp; compact -> 43.dp; else -> 52.dp }), dense)
++                    Spacer(Modifier.width(when { dense -> 5.dp; compact -> 9.dp; else -> 12.dp }))
+                     Column(
+                         modifier = Modifier.weight(1f),
+                         horizontalAlignment = Alignment.End
+@@ -563,7 +567,7 @@
+                             text = item.name,
+                             color = if (lightMode) Color(0xFF111111) else Color.White,
+                             fontSize = nameFontSize,
+-                            lineHeight = when { dense -> 10.sp; compact -> 16.sp; else -> 20.sp },
++                            lineHeight = when { dense -> 12.sp; compact -> 16.sp; else -> 20.sp },
+                             fontWeight = FontWeight.Bold,
+                             textAlign = TextAlign.End,
+                             maxLines = 1,
+@@ -574,23 +578,23 @@
+                         Text(
+                             text = item.code,
+                             color = if (lightMode) Color(0xFF8D8D92) else ChandMuted,
+-                            fontSize = when { dense -> 7.sp; compact -> 11.sp; else -> 13.sp },
++                            fontSize = when { dense -> 8.5.sp; compact -> 11.sp; else -> 13.sp },
+                             fontWeight = FontWeight.SemiBold,
+                             textAlign = TextAlign.End,
+                             maxLines = 1,
+                             overflow = TextOverflow.Ellipsis
+                         )
+-                        Spacer(Modifier.height(if (dense) 2.dp else 4.dp))
++                        Spacer(Modifier.height(if (dense) 3.dp else 4.dp))
+                         Row(
+                             verticalAlignment = Alignment.CenterVertically,
+-                            horizontalArrangement = Arrangement.spacedBy(when { dense -> 2.dp; compact -> 4.dp; else -> 6.dp })
++                            horizontalArrangement = Arrangement.spacedBy(when { dense -> 3.dp; compact -> 4.dp; else -> 6.dp })
+                         ) {
+                             MarketStatusLabel(item, compact, dense)
+                             Text(
+                                 text = compactPercent(item),
+                                 color = percentColor(item),
+-                                fontSize = when { dense -> 6.sp; compact -> 8.sp; else -> 10.sp },
+-                                lineHeight = when { dense -> 7.sp; compact -> 9.sp; else -> 11.sp },
++                                fontSize = when { dense -> 7.5.sp; compact -> 8.sp; else -> 10.sp },
++                                lineHeight = when { dense -> 9.sp; compact -> 9.sp; else -> 11.sp },
+                                 fontWeight = FontWeight.SemiBold,
+                                 maxLines = 1
+                             )
+@@ -602,21 +606,21 @@
+                     modifier = Modifier
+                         .fillMaxWidth()
+                         .padding(
+-                            top = when { dense -> 4.dp; compact -> 8.dp; else -> 10.dp },
+-                            bottom = when { dense -> 3.dp; compact -> 6.dp; else -> 8.dp }
++                            top = when { dense -> 5.dp; compact -> 8.dp; else -> 10.dp },
++                            bottom = when { dense -> 4.dp; compact -> 6.dp; else -> 8.dp }
+                         )
+                 ) {
+                     Text(
+                         text = changeText,
+                         color = trendColor(item),
+                         fontSize = changeFontSize,
+-                        lineHeight = when { dense -> 9.sp; compact -> 17.sp; else -> 22.sp },
++                        lineHeight = when { dense -> 11.sp; compact -> 17.sp; else -> 22.sp },
+                         fontWeight = FontWeight.Medium,
+                         maxLines = 1,
+                         softWrap = false,
+                         overflow = TextOverflow.Clip
+                     )
+-                    Spacer(Modifier.height(when { dense -> 2.dp; compact -> 4.dp; else -> 6.dp }))
++                    Spacer(Modifier.height(when { dense -> 3.dp; compact -> 4.dp; else -> 6.dp }))
+                     Text(
+                         text = priceText,
+                         color = if (item.isAvailable) {
+@@ -685,8 +689,8 @@
+             Text(
+                 text = "LIVE",
+                 color = liveForeground,
+-                fontSize = if (dense) 5.sp else if (compact) 7.sp else 8.sp,
+-                lineHeight = if (dense) 6.sp else if (compact) 8.sp else 9.sp,
++                fontSize = if (dense) 6.sp else if (compact) 7.sp else 8.sp,
++                lineHeight = if (dense) 7.sp else if (compact) 8.sp else 9.sp,
+                 fontWeight = FontWeight.Bold,
+                 letterSpacing = if (dense) 0.1.sp else 0.35.sp,
+                 modifier = Modifier.padding(horizontal = if (dense) 2.dp else 4.dp, vertical = if (dense) 1.dp else 2.dp)
+@@ -1458,24 +1462,84 @@
+ @Composable
+ private fun ControlBar(
+     gridMode: Boolean,
++    compactMode: Boolean,
+     onAdd: () -> Unit,
+-    onToggleLayout: () -> Unit,
++    onSelectList: () -> Unit,
++    onSelectGrid: () -> Unit,
++    onSelectCompact: () -> Unit,
+     onSettings: () -> Unit
+ ) {
++    val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
+     Row(
+         modifier = Modifier
+             .fillMaxWidth()
+             .padding(horizontal = 12.dp, vertical = 2.dp),
+-        horizontalArrangement = Arrangement.SpaceEvenly,
++        horizontalArrangement = Arrangement.SpaceBetween,
+         verticalAlignment = Alignment.CenterVertically
+     ) {
+         SmallControl(Icons.Default.Add, "افزودن", onAdd)
+-        SmallControl(
+-            if (gridMode) Icons.Default.ViewAgenda else Icons.Default.GridView,
+-            "چیدمان",
+-            onToggleLayout
+-        )
++        Surface(
++            shape = RoundedCornerShape(16.dp),
++            color = if (isLight) Color(0xFFECEBE8) else Color(0xFF27272B),
++            border = androidx.compose.foundation.BorderStroke(
++                1.dp,
++                if (isLight) Color(0xFFD8D7D3) else Color(0xFF3B3B40)
++            )
++        ) {
++            Row(
++                modifier = Modifier.padding(3.dp),
++                horizontalArrangement = Arrangement.spacedBy(2.dp),
++                verticalAlignment = Alignment.CenterVertically
++            ) {
++                LayoutModeControl(
++                    icon = Icons.Default.ViewAgenda,
++                    description = "نمایش فهرستی",
++                    selected = !gridMode && !compactMode,
++                    onClick = onSelectList
++                )
++                LayoutModeControl(
++                    icon = Icons.Default.GridView,
++                    description = "نمایش دو ستونه",
++                    selected = gridMode && !compactMode,
++                    onClick = onSelectGrid
++                )
++                LayoutModeControl(
++                    icon = Icons.Default.ViewCompact,
++                    description = "نمایش فشرده",
++                    selected = compactMode,
++                    onClick = onSelectCompact
++                )
++            }
++        }
+         SmallControl(Icons.Default.Settings, "تنظیمات", onSettings)
++    }
++}
++
++@Composable
++private fun LayoutModeControl(
++    icon: androidx.compose.ui.graphics.vector.ImageVector,
++    description: String,
++    selected: Boolean,
++    onClick: () -> Unit
++) {
++    val activeColor = MaterialTheme.colorScheme.primary
++    IconButton(onClick = onClick, modifier = Modifier.size(38.dp)) {
++        Box(
++            modifier = Modifier
++                .fillMaxSize()
++                .background(
++                    color = if (selected) activeColor.copy(alpha = 0.16f) else Color.Transparent,
++                    shape = RoundedCornerShape(12.dp)
++                ),
++            contentAlignment = Alignment.Center
++        ) {
++            Icon(
++                imageVector = icon,
++                contentDescription = description,
++                tint = if (selected) activeColor else ChandMuted,
++                modifier = Modifier.size(20.dp)
++            )
++        }
+     }
+ }
+ 
+diff --git a/app/src/main/java/ir/personal/chand/MainViewModel.kt b/app/src/main/java/ir/personal/chand/MainViewModel.kt
+--- a/app/src/main/java/ir/personal/chand/MainViewModel.kt
++++ b/app/src/main/java/ir/personal/chand/MainViewModel.kt
+@@ -99,6 +99,7 @@
+     private var historyJob: Job? = null
+     private var pullRefreshJob: Job? = null
+     private val refreshMutex = Mutex()
++    private val catalogUpdateMutex = Mutex()
+     private var streamClient: MarketStreamClient? = null
+     private var tradingViewStreamClient: TradingViewStreamClient? = null
+     private var tsetmcLiveClient: TsetmcLiveClient? = null
+@@ -324,6 +325,7 @@
+ )
+ 
+ viewModelScope.launch {
++catalogUpdateMutex.withLock {
+ try {
+ val oldItems = saved()
+ val oldIds = oldItems.map(MarketDescriptor::id).toSet()
+@@ -346,14 +348,14 @@
+ 
+ val newCount = fresh.count { it.id !in oldIds }
+ val message = if (!result.complete) {
+-    "دریافت بخشی از فهرست انجام شد؛ " + fresh.size + " نماد بررسی شد. فهرست قبلی حفظ شد؛ برای تکمیل دوباره تلاش کنید."
++    "بخشی از فهرست دریافت و ذخیره شد؛ " + fresh.size + " نماد بررسی شد و فهرست قبلی حفظ شد. برای تکمیل فهرست، بعداً دوباره بررسی کنید."
+ } else if (!hadSync) {
+     "همگام‌سازی انجام شد؛ " + fresh.size + " نماد از منبع دریافت شد."
+ } else {
+     "بررسی انجام شد؛ " + fresh.size + " نماد دریافت شد و " + newCount + " نماد جدید اضافه شد."
+ }
+ set(CatalogUpdateUiState(running = false, progress = 100,
+-    success = result.complete, message = message))
++    success = true, message = message))
+ } catch (timeout: TimeoutCancellationException) {
+     set(current().copy(running = false, success = false,
+         message = "مهلت دریافت فهرست تمام شد؛ فهرست قبلی حفظ شده است. دوباره تلاش کنید."))
+@@ -368,6 +370,7 @@
+ message = catalogUpdateFailureMessage(label, failure)
+ )
+ )
++}
+ }
+ }
+ }
+@@ -633,7 +636,20 @@
+         if (showInitialLoading) _uiState.update { it.copy(loading = true) }
+         val visibleIds = _uiState.value.settings.visibleIds
+         val refreshStartedAt = System.currentTimeMillis()
+-        val snapshot = repository.fetch(visibleIds)
++        val snapshot = repository.fetch(visibleIds) { partial ->
++            if (_uiState.value.settings.visibleIds == visibleIds && partial.items.any(MarketItem::isAvailable)) {
++                _uiState.update { current ->
++                    if (current.settings.visibleIds != visibleIds) current
++                    else current.copy(
++                        loading = false,
++                        snapshot = partial,
++                        connectionState = if (current.connectionState == LiveConnectionState.LIVE) {
++                            LiveConnectionState.LIVE
++                        } else LiveConnectionState.POLLING
++                    )
++                }
++            }
++        }
+         currentCoroutineContext().ensureActive()
+         if (_uiState.value.settings.visibleIds != visibleIds) return
+         val sanitizedVisibleIds = repository.sanitizeVisibleIds(visibleIds)
+diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -16,12 +16,15 @@
+ import kotlin.coroutines.resume
+ import kotlin.coroutines.resumeWithException
+ import kotlinx.coroutines.Dispatchers
++import kotlinx.coroutines.Deferred
+ import kotlinx.coroutines.async
+ import kotlinx.coroutines.coroutineScope
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
+ import kotlinx.coroutines.withContext
+ import kotlinx.coroutines.withTimeoutOrNull
++import kotlinx.coroutines.selects.onAwait
++import kotlinx.coroutines.selects.select
+ import okhttp3.OkHttpClient
+ import okhttp3.Request
+ import okhttp3.MediaType.Companion.toMediaType
+@@ -254,7 +257,10 @@
+         return snapshotOf(visibleIds).also(::cacheSnapshotThrottled)
+     }
+ 
+-    suspend fun fetch(visibleIds: List<String>): MarketSnapshot = withContext(Dispatchers.IO) {
++    suspend fun fetch(
++        visibleIds: List<String>,
++        onPartialSnapshot: ((MarketSnapshot) -> Unit)? = null
++    ): MarketSnapshot = withContext(Dispatchers.IO) {
+         val descriptors = resolveVisibleDescriptors(visibleIds)
+         if (descriptors.isEmpty()) return@withContext emptySnapshot()
+ 
+@@ -269,30 +275,24 @@
+                 it.source != MarketSource.TGJU && !isStockDescriptor(it)
+             }
+ 
+-            // Resolve only cached/local TGJU equivalents on the critical path. Remote
+-            // alias discovery is scheduled separately so it cannot hold up the first quote.
++            // Remote TGJU alias discovery stays off the critical path for the first quote.
+             val tgjuAliases = resolveTgjuFallbackDescriptors(externalNonStock)
+             val tgjuQueryDescriptors = (nativeTgjuDescriptors + tgjuAliases.values)
+                 .distinctBy(MarketDescriptor::id)
+ 
+-            // Start all provider requests together. In the old order, the app waited for
+-            // TGJU before even starting fallback providers, adding a full network timeout
+-            // to symbols that TGJU does not publish.
+-            val tgjuQuotes = async {
+-                if (tgjuQueryDescriptors.isEmpty()) emptyList()
+-                else requestResult {
++            val tgjuQuotes: Deferred<Pair<Boolean, List<MarketItem>>> = async {
++                true to if (tgjuQueryDescriptors.isEmpty()) emptyList() else requestResult {
+                     fetchTgjuItems(tgjuQueryDescriptors, previous, receivedAt).items
+                 }.getOrDefault(emptyList())
+             }
+-            val tgjuStocks = async {
+-                if (stockDescriptors.isEmpty()) emptyList()
+-                else requestResult {
++            val tgjuStocks: Deferred<Pair<Boolean, List<MarketItem>>> = async {
++                true to if (stockDescriptors.isEmpty()) emptyList() else requestResult {
+                     fetchTgjuStockItems(stockDescriptors, previous, receivedAt)
+                 }.getOrDefault(emptyList())
+             }
+ 
+-            // TSETMC/TradingView are fallbacks only. Starting them in parallel is safe:
+-            // chooseByPriority below always selects a valid TGJU quote over a fallback.
++            // Fallback providers run at the same time as TGJU. Consume whichever finishes
++            // first so a slow provider cannot hide a valid quote from the screen.
+             val fallbackDescriptors = buildList {
+                 descriptors.filter { it.source != MarketSource.TGJU }.forEach(::add)
+                 descriptors.filter { it.source == MarketSource.TGJU }.forEach { original ->
+@@ -310,55 +310,84 @@
+             }.distinctBy(MarketDescriptor::id)
+             val tsetmcDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TSETMC }
+             val tradingViewDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TRADINGVIEW }
+-            val tsetmcRequest = async {
+-                if (tsetmcDescriptors.isEmpty()) emptyList()
+-                else requestResult { fetchTsetmcItems(tsetmcDescriptors, previous, receivedAt) }
+-                    .getOrDefault(emptyList())
+-            }
+-            val tradingViewRequest = async {
+-                if (tradingViewDescriptors.isEmpty()) emptyList()
+-                else requestResult { fetchTradingViewItems(tradingViewDescriptors, previous, receivedAt) }
+-                    .getOrDefault(emptyList())
+-            }
+-
+-            val primaryItems = MarketQuotePolicy.chooseByPriority(tgjuQuotes.await(), tgjuStocks.await())
+-            val primaryIds = primaryItems.mapTo(linkedSetOf(), MarketItem::id)
+-            tgjuPrimaryValidIds = primaryIds
+-            val fallbackItems = tsetmcRequest.await() + tradingViewRequest.await()
+-            val freshItems = MarketQuotePolicy.chooseByPriority(primaryItems, fallbackItems)
+-
+-            currentCoroutineContext().ensureActive()
+-            synchronized(lastItems) {
+-                freshItems.forEach { incoming ->
+-                    val current = lastItems[incoming.id]
+-                    val liveIsRecent = current?.origin == DataOrigin.LIVE &&
+-                        receivedAt - current.receivedAtMillis < LIVE_NETWORK_GRACE_MS
+-                    val incomingTime = incoming.sourceUpdatedAtMillis.takeIf { it > 0L }
+-                    val currentTime = current?.sourceUpdatedAtMillis?.takeIf { it > 0L }
+-                    val incomingIsNewer = when {
+-                        incomingTime == null -> current?.origin != DataOrigin.LIVE
+-                        currentTime == null -> true
+-                        else -> incomingTime >= currentTime
++            val tsetmcRequest: Deferred<Pair<Boolean, List<MarketItem>>> = async {
++                false to if (tsetmcDescriptors.isEmpty()) emptyList() else requestResult {
++                    fetchTsetmcItems(tsetmcDescriptors, previous, receivedAt)
++                }.getOrDefault(emptyList())
++            }
++            val tradingViewRequest: Deferred<Pair<Boolean, List<MarketItem>>> = async {
++                false to if (tradingViewDescriptors.isEmpty()) emptyList() else requestResult {
++                    fetchTradingViewItems(tradingViewDescriptors, previous, receivedAt)
++                }.getOrDefault(emptyList())
++            }
++
++            val pending = linkedSetOf(tgjuQuotes, tgjuStocks, tsetmcRequest, tradingViewRequest)
++            val currentPrimaryIds = linkedSetOf<String>()
++            var primaryProvidersRemaining = 2
++            while (pending.isNotEmpty()) {
++                currentCoroutineContext().ensureActive()
++                val (completedRequest, providerResult) = select<
++                    Pair<Deferred<Pair<Boolean, List<MarketItem>>>, Pair<Boolean, List<MarketItem>>>>
++                > {
++                    pending.forEach { request -> request.onAwait { result -> request to result } }
++                }
++                pending.remove(completedRequest)
++                val (isPrimary, providerItems) = providerResult
++                val validItems = if (isPrimary) {
++                    MarketQuotePolicy.chooseByPriority(providerItems, emptyList())
++                } else {
++                    MarketQuotePolicy.chooseByPriority(emptyList(), providerItems)
++                }
++
++                if (isPrimary) {
++                    currentPrimaryIds += validItems.map(MarketItem::id)
++                    primaryProvidersRemaining--
++                    if (primaryProvidersRemaining == 0) {
++                        tgjuPrimaryValidIds = currentPrimaryIds.toSet()
+                     }
+-                    val incomingIsTgjuPrimary = incoming.source == MarketSource.TGJU && incoming.id in primaryIds
+-                    val currentIsTgju = current?.source == MarketSource.TGJU
+-                    val fallbackAfterTgjuMiss = incoming.id !in primaryIds && currentIsTgju && incoming.source != MarketSource.TGJU
+-                    if (current == null ||
+-                        (incomingIsTgjuPrimary && !currentIsTgju) ||
+-                        fallbackAfterTgjuMiss ||
+-                        (!currentIsTgju && !liveIsRecent && incomingIsNewer) ||
+-                        (currentIsTgju && incomingIsTgjuPrimary && incomingIsNewer)) {
+-                        lastItems[incoming.id] = incoming
++                }
++
++                if (validItems.isNotEmpty()) {
++                    synchronized(lastItems) {
++                        validItems.forEach { incoming ->
++                            val current = lastItems[incoming.id]
++                            val liveIsRecent = current?.origin == DataOrigin.LIVE &&
++                                receivedAt - current.receivedAtMillis < LIVE_NETWORK_GRACE_MS
++                            val incomingTime = incoming.sourceUpdatedAtMillis.takeIf { it > 0L }
++                            val currentTime = current?.sourceUpdatedAtMillis?.takeIf { it > 0L }
++                            val incomingIsNewer = when {
++                                incomingTime == null -> current?.origin != DataOrigin.LIVE
++                                currentTime == null -> true
++                                else -> incomingTime >= currentTime
++                            }
++                            val incomingIsTgjuPrimary = incoming.source == MarketSource.TGJU &&
++                                incoming.id in currentPrimaryIds
++                            val currentIsTgju = current?.source == MarketSource.TGJU
++                            val fallbackAfterTgjuMiss = incoming.id !in currentPrimaryIds &&
++                                currentIsTgju && incoming.source != MarketSource.TGJU
++                            if (current == null ||
++                                (incomingIsTgjuPrimary && !currentIsTgju) ||
++                                fallbackAfterTgjuMiss ||
++                                (!currentIsTgju && !liveIsRecent && incomingIsNewer) ||
++                                (currentIsTgju && incomingIsTgjuPrimary && incomingIsNewer)
++                            ) {
++                                lastItems[incoming.id] = incoming
++                            }
++                        }
+                     }
++                    val partial = snapshotOf(visibleIds, message = null)
++                    if (partial.items.any(MarketItem::isAvailable)) {
++                        cacheSnapshotThrottled(partial)
++                        onPartialSnapshot?.invoke(partial)
++                    }
+                 }
+             }
+ 
+             val snapshot = snapshotOf(visibleIds, message = null)
+-            if (freshItems.isNotEmpty()) cacheSnapshotThrottled(snapshot)
++            if (snapshot.items.any(MarketItem::isAvailable)) cacheSnapshotThrottled(snapshot)
+             snapshot
+         }
+     }
+-
+ 
+     suspend fun fetchHistory(itemId: String, range: HistoryRange): HistorySeries =
+         withContext(Dispatchers.IO) {
+@@ -501,33 +530,63 @@
+         onProgress: (Int) -> Unit = {}
+     ): CatalogRefreshResult = withContext(Dispatchers.IO) {
+         val all = linkedMapOf<String, MarketDescriptor>()
++        val startedAt = System.currentTimeMillis()
+         var complete = false
+-        val startedAt = System.currentTimeMillis()
+-        for (page in 1..60) {
++        var hadPageFailure = false
++        var firstFailure: Throwable? = null
++        var page = 1
++        val maxPages = 60
++        val batchSize = 3
++
++        while (page <= maxPages) {
+             currentCoroutineContext().ensureActive()
+-            // Return a clearly marked partial list instead of timing out the entire button.
+             if (System.currentTimeMillis() - startedAt >= IRAN_CATALOG_MAX_REFRESH_MS) break
+-            val response = requestResult {
+-                CatalogRefresh.retry { fetchTgjuCatalogModule("markets.internal", "", page, strict = true) }
+-            }
+-            val result = response.getOrElse { failure ->
+-                if (all.isEmpty()) throw failure
+-                return@withContext CatalogRefreshResult(all.values.toList(), complete = false)
+-            }
+-            val before = all.size
+-            result.items.filterNot(::isTgjuStockDescriptor)
+-                .filterNot { it.category.contains("جهانی") || it.category.contains("global", true) }
+-                .filterNot { it.id in retiredIds }
+-                .forEach { all[it.id] = it }
+-            onProgress((page * 10).coerceAtMost(90))
+-            if (!result.hasMore) {
+-                complete = true
++            val batchPages = (page..minOf(page + batchSize - 1, maxPages)).toList()
++            val beforeBatch = all.size
++            val results = coroutineScope {
++                batchPages.map { requestedPage ->
++                    async {
++                        requestedPage to requestResult {
++                            CatalogRefresh.retry {
++                                fetchTgjuCatalogModule("markets.internal", "", requestedPage, strict = true)
++                            }
++                        }
++                    }
++                }.map { it.await() }.sortedBy { it.first }
++            }
++            var reachedLastPage = false
++            for ((requestedPage, response) in results) {
++                currentCoroutineContext().ensureActive()
++                if (response.isFailure) {
++                    hadPageFailure = true
++                    if (firstFailure == null) firstFailure = response.exceptionOrNull()
++                    continue
++                }
++                val result = response.getOrThrow()
++                val beforePage = all.size
++                result.items.filterNot(::isTgjuStockDescriptor)
++                    .filterNot { it.category.contains("جهانی") || it.category.contains("global", true) }
++                    .filterNot { it.id in retiredIds }
++                    .forEach { all[it.id] = it }
++                onProgress((requestedPage * 90 / maxPages).coerceIn(5, 90))
++                if (!result.hasMore) {
++                    reachedLastPage = true
++                    break
++                }
++                if (result.items.isNotEmpty() && all.size == beforePage && beforePage > 0) {
++                    // A repeated page is not evidence that the remaining catalog is complete.
++                    reachedLastPage = false
++                    break
++                }
++            }
++            if (reachedLastPage) {
++                complete = !hadPageFailure
+                 break
+             }
+-            // Repeated non-empty pages must not loop or claim a complete download.
+-            if (result.items.isNotEmpty() && all.size == before && before > 0) break
+-        }
+-        check(all.isNotEmpty()) { "TGJU فهرست معتبری برای بازار ایران برنگرداند" }
++            if (all.size == beforeBatch) break
++            page += batchPages.size
++        }
++        if (all.isEmpty()) throw firstFailure ?: IllegalStateException("TGJU فهرست معتبری برای بازار ایران برنگرداند")
+         val items = all.values.sortedWith(compareBy<MarketDescriptor> { it.code }.thenBy { it.name })
+         synchronized(knownDescriptors) { items.forEach { knownDescriptors[it.id] = it } }
+         CatalogRefreshResult(items, complete)
+@@ -627,21 +686,47 @@
+     ): CatalogRefreshResult {
+         val all = linkedMapOf<String, MarketDescriptor>()
+         var complete = false
+-        for (page in 1..maxPages) {
++        var hadPageFailure = false
++        var page = 1
++        val batchSize = 3
++        while (page <= maxPages) {
+             currentCoroutineContext().ensureActive()
+-            val result = requestResult {
+-                CatalogRefresh.retry { fetchTgjuCatalogModule(module, "", page, strict = true) }
+-            }.getOrElse {
+-                return CatalogRefreshResult(all.values.toList(), complete = false)
+-            }
+-            val previousSize = all.size
+-            result.items.filterNot { it.id in retiredIds }.forEach { all[it.id] = it }
+-            onProgress((page * 100 / maxPages).coerceAtMost(95))
+-            if (!result.hasMore) {
+-                complete = true
++            val batchPages = (page..minOf(page + batchSize - 1, maxPages)).toList()
++            val beforeBatch = all.size
++            val results = coroutineScope {
++                batchPages.map { requestedPage ->
++                    async {
++                        requestedPage to requestResult {
++                            CatalogRefresh.retry {
++                                fetchTgjuCatalogModule(module, "", requestedPage, strict = true)
++                            }
++                        }
++                    }
++                }.map { it.await() }.sortedBy { it.first }
++            }
++            var reachedLastPage = false
++            for ((requestedPage, response) in results) {
++                currentCoroutineContext().ensureActive()
++                if (response.isFailure) {
++                    hadPageFailure = true
++                    continue
++                }
++                val result = response.getOrThrow()
++                val beforePage = all.size
++                result.items.filterNot { it.id in retiredIds }.forEach { all[it.id] = it }
++                onProgress((requestedPage * 100 / maxPages).coerceAtMost(95))
++                if (!result.hasMore) {
++                    reachedLastPage = true
++                    break
++                }
++                if (result.items.isNotEmpty() && all.size == beforePage && beforePage > 0) break
++            }
++            if (reachedLastPage) {
++                complete = !hadPageFailure
+                 break
+             }
+-            if (result.items.isNotEmpty() && all.size == previousSize && previousSize > 0) break
++            if (all.size == beforeBatch) break
++            page += batchPages.size
+         }
+         return CatalogRefreshResult(all.values.toList(), complete)
+     }
+@@ -1412,7 +1497,8 @@
+ 
+     private suspend fun fetchTgjuCatalogModule(module: String, query: String, page: Int, strict: Boolean = false): CatalogModulePage {
+         val queryPart = query.trim().takeIf { it.isNotEmpty() }?.let { "&q=${encode(it)}" }.orEmpty()
+-        val root = JSONObject(httpGet("$TGJU_API/v1/newsearch?module=$module&page=$page$queryPart", 8_000))
++        val url = "$TGJU_API/v1/newsearch?module=${encode(module)}&page=$page$queryPart"
++        val root = JSONObject(httpGetTgjuCatalog(url, 8_000))
+         val listPayload = findCatalogListPayload(root)
+         if (strict) check(listPayload is JSONArray || listPayload is JSONObject) {
+             "TGJU ساختار فهرست معتبر نیست"
+@@ -1420,30 +1506,103 @@
+         val rawItems = objectList(listPayload)
+         val items = rawItems
+             .filter(::isActiveTgjuRecord)
+-            .mapNotNull(::parseTgjuDescriptor)
+-        val last = if (strict) root.opt("last").toString().lowercase(Locale.ROOT) in setOf("true", "1")
+-            else root.optBoolean("last", false)
+-        return CatalogModulePage(items, !last && (if (strict) rawItems.isNotEmpty() else items.isNotEmpty()))
+-    }
+-
++            .mapNotNull { parseTgjuDescriptor(it, module) }
++        val explicitHasMore = firstPresent(root, "has_more", "hasMore", "has_next", "hasNext", "next_page", "nextPage")
++        val explicitLast = firstPresent(root, "last", "is_last", "isLast")
++        val hasMore = when {
++            explicitHasMore != null -> catalogFlag(explicitHasMore)
++            explicitLast != null -> !catalogFlag(explicitLast)
++            else -> rawItems.isNotEmpty()
++        }
++        return CatalogModulePage(items, hasMore)
++    }
++
++    /** TGJU's internal search response has used both list arrays and nested object maps. */
+     private fun findCatalogListPayload(root: JSONObject): Any? {
++        val preferredKeys = listOf(
++            "list", "items", "results", "data", "result", "records", "assets", "symbols", "markets", "payload"
++        )
++
++        fun hasAnyText(value: JSONObject, vararg keys: String): Boolean =
++            keys.any { key -> value.optString(key).trim().isNotBlank() }
++
++        fun looksLikeRecord(value: JSONObject): Boolean {
++            val hasTitle = hasAnyText(value, "title", "title_fa", "name", "instrument")
++            val hasKey = hasAnyText(value, "s3", "grade", "s1", "symbol", "code", "slug", "key", "instrument")
++            val hasType = value.optString("type").startsWith("markets.")
++            return hasTitle && (hasKey || hasType)
++        }
++
++        fun objectMapAsArray(value: JSONObject): JSONArray? {
++            val entries = mutableListOf<Pair<String, JSONObject>>()
++            val keys = value.keys()
++            while (keys.hasNext()) {
++                val key = keys.next()
++                value.optJSONObject(key)?.let { entries += key to it }
++            }
++            if (entries.isEmpty()) return null
++            val recordEntries = entries.filter { (_, child) ->
++                looksLikeRecord(child) || hasAnyText(child, "title", "title_fa", "name", "instrument")
++            }
++            if (recordEntries.isEmpty() || recordEntries.size * 2 < entries.size) return null
++            return JSONArray().apply {
++                recordEntries.forEach { (mapKey, child) ->
++                    val copy = JSONObject(child.toString())
++                    if (!hasAnyText(copy, "s3", "grade", "s1", "symbol", "code", "slug", "key")) {
++                        copy.put("s3", mapKey)
++                    }
++                    put(copy)
++                }
++            }
++        }
++
+         fun unwrap(value: Any?, depth: Int = 0): Any? {
+-            if (depth > 3) return null
++            if (depth > 7) return null
+             return when (value) {
+-                is JSONArray -> value
++                is JSONArray -> {
++                    if (value.length() == 0) return value
++                    val directRecords = JSONArray()
++                    for (i in 0 until value.length()) {
++                        val child = value.optJSONObject(i) ?: continue
++                        if (looksLikeRecord(child)) directRecords.put(child)
++                    }
++                    if (directRecords.length() > 0) directRecords
++                    else {
++                        for (i in 0 until value.length()) {
++                            val nested = unwrap(value.opt(i), depth + 1)
++                            if (nested != null && objectList(nested).isNotEmpty()) return nested
++                        }
++                        null
++                    }
++                }
+                 is JSONObject -> {
+-                    val recordKeys = listOf("id", "name", "title", "instrument", "closingPrice", "sourceKey", "price")
+-                    if (recordKeys.any(value::has)) value
+-                    else {
+-                        val nestedKeys = listOf("list", "items", "results", "data", "result")
+-                        nestedKeys.firstNotNullOfOrNull { key -> unwrap(value.opt(key), depth + 1) } ?: value
++                    if (looksLikeRecord(value)) return value
++                    objectMapAsArray(value)?.let { return it }
++                    for (key in preferredKeys) {
++                        val nested = unwrap(value.opt(key), depth + 1)
++                        if (nested != null && (objectList(nested).isNotEmpty() || nested is JSONArray && nested.length() == 0)) {
++                            return nested
++                        }
+                     }
++                    val keys = value.keys()
++                    while (keys.hasNext()) {
++                        val nested = unwrap(value.opt(keys.next()), depth + 1)
++                        if (nested != null && objectList(nested).isNotEmpty()) return nested
++                    }
++                    null
+                 }
+                 else -> null
+             }
+         }
+-        val keys = listOf("list", "items", "results", "data", "result")
+-        return keys.firstNotNullOfOrNull { key -> unwrap(root.opt(key)) }
++
++        return unwrap(root)
++    }
++
++    private fun catalogFlag(value: Any?): Boolean = when (value) {
++        null, JSONObject.NULL -> false
++        is Boolean -> value
++        is Number -> value.toInt() != 0
++        else -> value.toString().trim().lowercase(Locale.ROOT) in setOf("1", "true", "yes", "on", "next")
+     }
+ 
+     private fun isActiveTgjuRecord(value: JSONObject): Boolean {
+@@ -1499,22 +1658,24 @@
+         }
+     }
+ 
+-    private fun parseTgjuDescriptor(value: JSONObject): MarketDescriptor? {
+-        val type = value.optString("type").trim()
++    private fun parseTgjuDescriptor(value: JSONObject, module: String): MarketDescriptor? {
++        val type = value.optString("type").trim().ifBlank { module }
+         if (!type.startsWith("markets.")) return null
+-        val title = value.optString("title").trim()
++        val title = sequenceOf(
++            value.optString("title"), value.optString("title_fa"), value.optString("name"), value.optString("instrument")
++        ).map(String::trim).firstOrNull(String::isNotBlank).orEmpty()
+         if (title.isBlank()) return null
+-        val rawUnit = value.optString("s2").trim().lowercase(Locale.ROOT)
++        val rawUnit = sequenceOf(value.optString("s2"), value.optString("unit"), value.optString("currency"), value.optString("currency_code")).map(String::trim).firstOrNull(String::isNotBlank).orEmpty().lowercase(Locale.ROOT)
+         val isStockCollection = type.contains("internal.stocks", ignoreCase = true)
+         val allowedStockKinds = setOf("stock", "equity", "share", "etf", "fund")
+         if (isStockCollection && rawUnit.isNotBlank() && rawUnit !in allowedStockKinds) return null
+         val stockLike = isStockCollection || rawUnit in allowedStockKinds
+         val sourceKey = sequenceOf(
+             value.optString("s3"), value.optString("grade"), value.optString("s1"),
+-            value.optString("symbol"), value.optString("code")
++            value.optString("symbol"), value.optString("code"), value.optString("slug"), value.optString("key"), value.optString("id")
+         ).map(String::trim).firstOrNull(String::isNotBlank) ?: return null
+         defaultByKey[sourceKey]?.let { return it }
+-        val rawCategory = value.optString("category").trim()
++        val rawCategory = sequenceOf(value.optString("category"), value.optString("group")).map(String::trim).firstOrNull(String::isNotBlank).orEmpty()
+         val category = when {
+             stockLike && rawCategory.isNotBlank() -> "بورس ایران · $rawCategory"
+             stockLike -> "بورس ایران"
+@@ -1522,7 +1683,7 @@
+             type.contains("global") -> "بازار جهانی"
+             else -> "بازار داخلی"
+         }
+-        val english = value.optString("title_en").trim()
++        val english = sequenceOf(value.optString("title_en"), value.optString("name_en")).map(String::trim).firstOrNull(String::isNotBlank).orEmpty()
+         val grade = value.optString("grade").trim()
+         val s1 = value.optString("s1").trim()
+         val code = when {
+@@ -1626,6 +1787,22 @@
+             .url(url)
+             .header("Accept", "application/json,text/plain,*/*")
+             .header("Cache-Control", "no-cache")
++            .header("User-Agent", HTTP_USER_AGENT)
++            .build()
++        val call = httpClient.newCall(request)
++        call.timeout().timeout(timeoutMillis, TimeUnit.MILLISECONDS)
++        return executeCancellable(call)
++    }
++
++    private suspend fun httpGetTgjuCatalog(url: String, timeoutMillis: Long): String {
++        val request = Request.Builder()
++            .url(url)
++            .header("Accept", "application/json,text/plain,*/*")
++            .header("Accept-Language", "fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7")
++            .header("Origin", "https://www.tgju.org")
++            .header("Referer", "https://www.tgju.org/")
++            .header("Cache-Control", "no-cache")
++            .header("Pragma", "no-cache")
+             .header("User-Agent", HTTP_USER_AGENT)
+             .build()
+         val call = httpClient.newCall(request)
+@@ -1955,8 +2132,8 @@
+         private const val TGJU_RESOLVER_TTL_MS = 24 * 60 * 60 * 1000L
+         private const val TGJU_RESOLVER_RETRY_MS = 60_000L
+         private const val IRAN_CATALOG_MAX_REFRESH_MS = 100_000L
+-        private const val GLOBAL_TGJU_MODULE_TIMEOUT_MS = 35_000L
+-        private const val GLOBAL_TGJU_MAX_PAGES = 10
++        private const val GLOBAL_TGJU_MODULE_TIMEOUT_MS = 50_000L
++        private const val GLOBAL_TGJU_MAX_PAGES = 20
+         private const val STOCK_PAGE_SIZE = 100
+         private const val TSETMC_API = "https://cdn.tsetmc.com"
+         private const val TSETMC_LEGACY_INIT = "https://old.tsetmc.com/tsev2/data/MarketWatchInit.aspx?h=0&r=0"
+diff --git a/app/src/main/java/ir/personal/chand/data/CatalogRefresh.kt b/app/src/main/java/ir/personal/chand/data/CatalogRefresh.kt
+--- a/app/src/main/java/ir/personal/chand/data/CatalogRefresh.kt
++++ b/app/src/main/java/ir/personal/chand/data/CatalogRefresh.kt
+@@ -17,16 +17,19 @@
+         return result.values.toList()
+     }
+ 
+-    suspend fun <T> retry(pauseMillis: Long = 450L, block: suspend () -> T): T {
++    suspend fun <T> retry(pauseMillis: Long = 700L, block: suspend () -> T): T {
+         try {
+             return block()
+         } catch (cancelled: CancellationException) {
+             throw cancelled
+         } catch (failure: Exception) {
+-            // An authorization/rate-limit response needs user/server intervention.
+-            if (listOf("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404", "HTTP 429")
+-                    .any { failure.message.orEmpty().contains(it) }) throw failure
+-            delay(pauseMillis)
++            val message = failure.message.orEmpty()
++            // Permanent client/auth/not-found errors won't improve with a retry. A 429,
++            // network reset or 5xx response is transient and deserves one spaced retry.
++            if (listOf("HTTP 400", "HTTP 401", "HTTP 403", "HTTP 404")
++                    .any { message.contains(it) }) throw failure
++            val pause = if (message.contains("HTTP 429")) maxOf(pauseMillis, 1_800L) else pauseMillis
++            delay(pause)
+             return block()
+         }
+     }
