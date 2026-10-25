@@ -29,6 +29,8 @@ jobs:
           git apply ../LIVE-Emerald.patch
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
+      - name: Restore exact approved session LIVE unit tests
+        run: cp overrides/MarketLiveStatusTest.kt project/app/src/test/java/ir/personal/chand/ui/MarketLiveStatusTest.kt
       - name: Verify key files match last approved source
         run: |
           set -euo pipefail
@@ -38,7 +40,8 @@ jobs:
           'e5aacdc3cc8eb9865ccb33ce9a2608fd8a61a4e276c82a67c2eb5159338701fd' 'app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt' \
           'c042db5b6ab3a1c825f6bf24b15c03a1614003334c0dbf3443dabb26aca9e2b8' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' \
           'b43d595d01a67452a3b37d89937e35a9ac280b87d3d20544fa23b57d7ac35563' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
-          '8c40912a2c00bc4b2c8a557e7fe252d41300e6e03b93678501bb3940e3f6506d' 'app/build.gradle.kts' | sha256sum -c -
+          '8c40912a2c00bc4b2c8a557e7fe252d41300e6e03b93678501bb3940e3f6506d' 'app/build.gradle.kts' \
+          'cf4879b4914bb892c8712afab838b712f029de0266b6137e73f54e19100c3f60' 'app/src/test/java/ir/personal/chand/ui/MarketLiveStatusTest.kt' | sha256sum -c -
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
