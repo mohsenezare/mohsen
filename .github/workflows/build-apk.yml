@@ -27,6 +27,8 @@ jobs:
           cd project
           git apply --check ../LIVE-Emerald.patch
           git apply ../LIVE-Emerald.patch
+      - name: Restore exact approved LIVE session logic
+        run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Verify key files match last approved source
         run: |
           set -euo pipefail
