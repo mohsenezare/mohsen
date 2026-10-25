@@ -1,0 +1,26 @@
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -645,13 +645,20 @@
+     }
+     val status = ir.personal.chand.ui.MarketLiveStatus.label(item, now)
+     if (status == "LIVE") {
++        // Modern emerald LIVE badge, tuned for both system light and dark themes.
++        // Only styling is changed: text, shape, spacing, and session logic stay locked.
++        val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
++        val liveBackground = if (lightTheme) Color(0xFFE2F8EC) else Color(0xFF0C3327)
++        val liveForeground = if (lightTheme) Color(0xFF087D4F) else Color(0xFF45F4A7)
++        val liveOutline = if (lightTheme) Color(0xFF9DDFBA) else Color(0xFF278C64)
+         Surface(
+-            color = Color(0xFF173A2C),
+-            shape = RoundedCornerShape(5.dp)
++            color = liveBackground,
++            shape = RoundedCornerShape(5.dp),
++            border = androidx.compose.foundation.BorderStroke(0.75.dp, liveOutline)
+         ) {
+             Text(
+                 text = "LIVE",
+-                color = ChandUp,
++                color = liveForeground,
+                 fontSize = if (compact) 7.sp else 8.sp,
+                 lineHeight = if (compact) 8.sp else 9.sp,
+                 fontWeight = FontWeight.Bold,
