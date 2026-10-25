@@ -35,6 +35,11 @@ jobs:
           cd project
           git apply --check ../TGJU-Primary-Compact-Cache.patch
           git apply ../TGJU-Primary-Compact-Cache.patch
+      - name: Apply TGJU resolver safety follow-up
+        run: |
+          cd project
+          git apply --check ../TGJU-Resolver-Safety.patch
+          git apply ../TGJU-Resolver-Safety.patch
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests

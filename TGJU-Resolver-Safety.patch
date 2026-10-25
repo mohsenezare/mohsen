@@ -1,0 +1,82 @@
+diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+index fa377a4..b9f3847 100644
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -706,30 +706,37 @@ class MarketRepository(
+         val local = synchronized(knownDescriptors) {
+             (knownDescriptors.values + builtInDescriptors).distinctBy(MarketDescriptor::id)
+                 .firstOrNull { candidate ->
+-                    candidate.source == MarketSource.TGJU && isSameInstrument(original, candidate)
++                    candidate.source == MarketSource.TGJU &&
++                        (isSameInstrument(original, candidate) || isKnownTgjuAlias(original, candidate))
+                 }
+         }
++        var allLookupRequestsSucceeded = local != null
+         val found = local ?: run {
+             val modules = when {
+-                original.category.contains("ارز دیجیتال", ignoreCase = true) -> listOf("markets.crypto", "markets.global")
++                original.category.contains("ارز دیجیتال", ignoreCase = true) -> listOf("markets.crypto")
+                 original.category.contains("جهانی", ignoreCase = true) || original.category.contains("فارکس", ignoreCase = true) ||
+-                    original.source == MarketSource.TRADINGVIEW -> listOf("markets.global", "markets.internal")
+-                else -> listOf("markets.internal", "markets.global")
++                    original.source == MarketSource.TRADINGVIEW -> listOf("markets.global")
++                else -> listOf("markets.internal")
+             }
+             val queries = (tgjuAliasKeys(original) + listOf(original.code, original.name))
+                 .map(String::trim).filter(String::isNotBlank).distinct().take(2)
+             var matched: MarketDescriptor? = null
++            var requestCount = 0
++            var successfulCount = 0
+             for (query in queries) {
+-                val pages = coroutineScope {
++                val results = coroutineScope {
+                     modules.map { module ->
+                         async { requestResult { fetchTgjuCatalogModule(module, query, 1) } }
+-                    }.map { it.await().getOrNull()?.items.orEmpty() }
++                    }.map { it.await() }
+                 }
+-                matched = pages.flatten().firstOrNull { candidate ->
++                requestCount += results.size
++                successfulCount += results.count { it.isSuccess }
++                matched = results.flatMap { it.getOrNull()?.items.orEmpty() }.firstOrNull { candidate ->
+                     isSameInstrument(original, candidate) || isKnownTgjuAlias(original, candidate)
+                 }
+                 if (matched != null) break
+             }
++            allLookupRequestsSucceeded = requestCount > 0 && successfulCount == requestCount
+             matched
+         }
+ 
+@@ -744,10 +751,14 @@ class MarketRepository(
+                 unit = candidate.unit.ifBlank { original.unit }
+             )
+         }
+-        synchronized(tgjuFallbackCache) {
+-            tgjuFallbackCache[original.id] = TgjuFallbackCacheEntry(now, mapped)
++        // Cache a positive match, or a negative match only when TGJU answered every
++        // resolver request. Network failures must not suppress future TGJU retries.
++        if (mapped != null || allLookupRequestsSucceeded) {
++            synchronized(tgjuFallbackCache) {
++                tgjuFallbackCache[original.id] = TgjuFallbackCacheEntry(now, mapped)
++            }
++            persistTgjuFallbackCache()
+         }
+-        persistTgjuFallbackCache()
+         return mapped
+     }
+ 
+@@ -762,9 +773,12 @@ class MarketRepository(
+ 
+     private fun isSameInstrument(left: MarketDescriptor, right: MarketDescriptor): Boolean {
+         fun key(value: String): String = value.uppercase(Locale.ROOT).filter(Char::isLetterOrDigit)
+-        val leftKeys = listOf(left.code, left.symbol, left.sourceKey.substringAfterLast(':'), left.sourceKey)
++        // Match instrument identifiers, not broad type badges such as GOLD, FX, or CRYPTO.
++        // Generic symbols are intentionally excluded to avoid mapping 18k gold to gold ounce,
++        // or one currency pair to another.
++        val leftKeys = listOf(left.code, left.sourceKey.substringAfterLast(':'), left.sourceKey)
+             .map(::key).filter { it.length >= 3 }.toSet()
+-        val rightKeys = listOf(right.code, right.symbol, right.sourceKey.substringAfterLast(':'), right.sourceKey)
++        val rightKeys = listOf(right.code, right.sourceKey.substringAfterLast(':'), right.sourceKey)
+             .map(::key).filter { it.length >= 3 }.toSet()
+         if (leftKeys.intersect(rightKeys).isNotEmpty()) return true
+         val leftName = key(left.name)
