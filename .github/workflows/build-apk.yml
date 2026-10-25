@@ -41,11 +41,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd project
-          git apply --check ../Mohsen-Startup-Catalog-Compact.patch
-          git apply ../Mohsen-Startup-Catalog-Compact.patch
+          patch -d project --dry-run -p1 < Mohsen-Startup-Catalog-Compact.patch
+          patch -d project -p1 < Mohsen-Startup-Catalog-Compact.patch
           echo "Applied source hashes:"
-          sha256sum app/src/main/java/ir/personal/chand/MainActivity.kt app/src/main/java/ir/personal/chand/MainViewModel.kt app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          sha256sum project/app/src/main/java/ir/personal/chand/MainActivity.kt project/app/src/main/java/ir/personal/chand/MainViewModel.kt project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
