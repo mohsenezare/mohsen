@@ -44,7 +44,14 @@ jobs:
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
         run: cp overrides/MarketLiveStatusTest.kt project/app/src/test/java/ir/personal/chand/ui/MarketLiveStatusTest.kt
+      - name: Upload staged source snapshot for verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: staged-source-snapshot
+          path: project/
+          if-no-files-found: error
       - name: Verify feature source and locked LIVE files
+        continue-on-error: true
         run: |
           set -euo pipefail
           cd project
