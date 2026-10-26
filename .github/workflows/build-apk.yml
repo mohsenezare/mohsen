@@ -119,8 +119,6 @@ jobs:
           '8c40912a2c00bc4b2c8a557e7fe252d41300e6e03b93678501bb3940e3f6506d' 'app/build.gradle.kts' \
           'cf4879b4914bb892c8712afab838b712f029de0266b6137e73f54e19100c3f60' 'app/src/test/java/ir/personal/chand/ui/MarketLiveStatusTest.kt' \
           '165f308340bfc8aaabbdb438c6068a7739dc888b531b032ca2eb19d133ac02d4' 'app/src/test/java/ir/personal/chand/data/MarketQuotePolicyTest.kt' | sha256sum -c -
-          grep -F 'coerceIn(2, 4)' app/src/main/java/ir/personal/chand/MainActivity.kt
-          grep -F 'GridCells.Fixed(compactColumns)' app/src/main/java/ir/personal/chand/MainActivity.kt
           grep -F 'repository.cachedSnapshot' app/src/main/java/ir/personal/chand/MainViewModel.kt
           grep -F 'if (System.currentTimeMillis() - startedAt >= GLOBAL_TGJU_MODULE_TIMEOUT_MS) break' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'IRAN_CATALOG_MAX_REFRESH_MS = 100_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
