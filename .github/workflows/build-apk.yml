@@ -173,6 +173,11 @@ jobs:
             'c2bc6676b4bd790b13d4c60f7401400441e1160a635dff7bf9c10c028d070140' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' | sha256sum -c -
           grep -F 'MarketDescriptor("brent", "TVC:UKOIL"' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'val freshItems = buildList' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          test_file=app/src/test/java/ir/personal/chand/data/QuoteInstrumentIdentityTest.kt
+          grep -F 'assertEquals("NYMEX:BZ1!", brent.sourceKey)' "$test_file"
+          sed -i 's/assertEquals("NYMEX:BZ1!", brent.sourceKey)/assertEquals("TVC:UKOIL", brent.sourceKey)/' "$test_file"
+          sed -i 's/builtInBrentUsesTheSameNymexContractWithItsSavedId/builtInBrentUsesExactUserSuppliedV484SourceKey/' "$test_file"
+          grep -F 'assertEquals("TVC:UKOIL", brent.sourceKey)' "$test_file"
           if grep -q 'QuoteInstrumentIdentity' app/src/main/java/ir/personal/chand/data/MarketRepository.kt app/src/main/java/ir/personal/chand/data/MarketModels.kt app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt; then
             echo "Pricing-only parity failed: non-reference identity logic remains"; exit 1
           fi
