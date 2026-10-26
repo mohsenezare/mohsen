@@ -1,4 +1,4 @@
-name: Build Mohsen Slim Horizontal Quotes APK
+name: Build Mohsen Catalog Stability, Brent Identity, Card Motion APK
 on:
   push:
     branches: [main]
@@ -103,6 +103,22 @@ jobs:
           grep -F 'Modifier.height(70.dp)' app/src/main/java/ir/personal/chand/MainActivity.kt
           grep -F 'private fun CompactQuoteRow(' app/src/main/java/ir/personal/chand/MainActivity.kt
           grep -F 'startProviderStreams(includeTsetmc = false)' app/src/main/java/ir/personal/chand/MainViewModel.kt
+      - name: Repair catalog updates, verify instrument identity, animate card reorder
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d project --dry-run -p1 < Mohsen-Catalog-Animation-Symbol-Safety.patch
+          patch -d project -p1 < Mohsen-Catalog-Animation-Symbol-Safety.patch
+          cd project
+          printf '%s  %s\n' \
+            '8c5541e0609b9caee6e8830f4a12f694b466cebc41b3379767c5287f2d6e5178' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
+            'b577f0b4376ad3a0c12c88326f86844c47d84ce07bc0741021d48ceebf2b283e' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+            '245d7178c54615aaf95798e4cc7b149c213638b93f4c92078063570154d45f92' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' \
+            'd68decc0513ed725caa5b481c3f0e97ab39f5487a7b9a3b6d2025148d2b380d8' 'app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt' \
+            '59bce09e4d2fb6584a736778ebe124b8329b7515d23e57a7108ca7c98c2f9978' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' | sha256sum -c -
+          test -f app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
+          grep -F 'placementSpec = tween(durationMillis = 330' app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'onProgress(4)' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -151,6 +167,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-slim-horizontal-quotes-debug-apk
+          name: mohsen-catalog-brent-card-motion-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

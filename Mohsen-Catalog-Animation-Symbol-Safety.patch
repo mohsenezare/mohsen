@@ -1,0 +1,319 @@
+diff --git a/app/src/main/java/ir/personal/chand/MainActivity.kt b/app/src/main/java/ir/personal/chand/MainActivity.kt
+index 280b358..7799592 100644
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -17,6 +17,8 @@ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.setContent
+ import androidx.activity.enableEdgeToEdge
+ import androidx.activity.viewModels
++import androidx.compose.animation.core.FastOutSlowInEasing
++import androidx.compose.animation.core.tween
+ import androidx.compose.foundation.Canvas
+ import androidx.compose.foundation.Image
+ import androidx.compose.foundation.background
+@@ -423,7 +425,14 @@ private fun MarketGrid(
+     ) {
+         items(items, key = MarketItem::id) { item ->
+             var dragOffset by remember(item.id) { mutableStateOf(Offset.Zero) }
++            // Animate keyed grid items between their old and new slots only.
++            // Stable prices, sizes, colors and the drag thresholds are unchanged.
+             val cardModifier = Modifier
++                .animateItem(
++                    fadeInSpec = null,
++                    placementSpec = tween(durationMillis = 330, easing = FastOutSlowInEasing),
++                    fadeOutSpec = null
++                )
+                 .fillMaxWidth()
+                 .then(
+                     when {
+diff --git a/app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt b/app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt
+new file mode 100644
+index 0000000..9edc197
+--- /dev/null
++++ b/app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt
+@@ -0,0 +1,45 @@
++package ir.personal.chand.data
++
++import java.util.Locale
++
++/** A search result must identify the actual instrument, not merely mention its asset class. */
++internal object GlobalInstrumentMatch {
++    private val strictProducts = setOf(
++        "UKOIL", "USOIL", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD",
++        "EURUSD", "GBPUSD", "USDJPY"
++    )
++
++    fun score(
++        sourceKey: String, symbol: String, fullName: String,
++        description: String, exchange: String
++    ): Int {
++        val expected = normalize(sourceKey.substringAfterLast(':'))
++        if (expected.isBlank()) return -1
++        val actual = normalize(symbol)
++        val full = normalize(fullName.substringAfterLast(':'))
++        val preferredExchange = sourceKey.substringBefore(':', "").uppercase(Locale.US)
++        val actualExchange = exchange.trim().uppercase(Locale.US)
++        val exact = actual == expected || full == expected
++        if (!exact) return -1
++
++        // CFD Brent UKOIL must never be silently replaced by WTI, an ICE
++        // futures contract, a dated expiry or an unrelated crude oil quote.
++        val desc = description.lowercase(Locale.US)
++        if (expected == "UKOIL" &&
++            (desc.contains("wti") || desc.contains("west texas") ||
++                actual == "USOIL" || full == "USOIL")) return -1
++        if (expected == "USOIL" &&
++            (desc.contains("brent") || actual == "UKOIL" || full == "UKOIL")) return -1
++
++        // For the built-in products, the data feed/exchange is part of identity.
++        // A similarly named instrument on another venue may have a different price.
++        if (expected in strictProducts && preferredExchange.isNotBlank() &&
++            actualExchange.isNotBlank() && !preferredExchange.equals(actualExchange, true) &&
++            !fullName.startsWith("$preferredExchange:", true)) return -1
++        return 200 + if (preferredExchange.isNotBlank() &&
++            actualExchange == preferredExchange) 40 else 0
++    }
++
++    private fun normalize(value: String): String = value.uppercase(Locale.US)
++        .filter(Char::isLetterOrDigit)
++}
+diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+index 963f449..e374376 100644
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -480,6 +480,7 @@ class MarketRepository(
+     internal suspend fun refreshIranMarketCatalogStrict(
+         onProgress: (Int) -> Unit = {}
+     ): CatalogRefreshResult = withContext(Dispatchers.IO) {
++        onProgress(3)
+         val all = linkedMapOf<String, MarketDescriptor>()
+         val startedAt = System.currentTimeMillis()
+         var complete = false
+@@ -537,6 +538,29 @@ class MarketRepository(
+             if (all.size == beforeBatch) break
+             page += batchPages.size
+         }
++        if (all.isEmpty()) {
++            // When TGJU's search endpoint times out, validate the known Iranian
++            // instruments against its independent price widget endpoint. Only
++            // symbols with a real positive returned quote qualify as a partial
++            // catalog. Never report this fallback as a complete discovery.
++            val candidates = synchronized(knownDescriptors) {
++                knownDescriptors.values.filter { descriptor ->
++                    descriptor.source == MarketSource.TGJU &&
++                        !descriptor.category.contains("جهانی") &&
++                        !descriptor.category.contains("global", true) &&
++                        !isTgjuStockDescriptor(descriptor)
++                }.distinctBy(MarketDescriptor::sourceKey).take(30)
++            }
++            if (candidates.isNotEmpty()) {
++                requestResult {
++                    fetchTgjuItems(candidates, emptyMap(), System.currentTimeMillis())
++                }.getOrNull()?.items?.forEach { item ->
++                    candidates.firstOrNull { it.id == item.id }?.let { all[it.id] = it }
++                }
++                if (all.isNotEmpty()) onProgress(85)
++            }
++            complete = false
++        }
+         if (all.isEmpty()) throw firstFailure ?: IllegalStateException("TGJU فهرست معتبری برای بازار ایران برنگرداند")
+         val items = all.values.sortedWith(compareBy<MarketDescriptor> { it.code }.thenBy { it.name })
+         synchronized(knownDescriptors) { items.forEach { knownDescriptors[it.id] = it } }
+@@ -581,43 +605,53 @@ class MarketRepository(
+         var completed = 0
+         var lastFailure: Throwable? = null
+ 
+-        // Fetch both TGJU modules concurrently with a hard per-module budget. A slow
+-        // pagination endpoint must not consume the whole Settings update timeout.
++        onProgress(4)
++        // Remote TGJU catalog can be blocked while Investing is reachable.
++        // Start both suppliers immediately; never hold the Investing results
++        // behind serial TGJU pagination or cancellation of an entire catalog.
+         val modules = listOf("markets.global", "markets.crypto")
+-        val moduleResults = coroutineScope {
+-            modules.mapIndexed { moduleIndex, module -> async {
+-                fetchTgjuCatalogAll(module, maxPages = GLOBAL_TGJU_MAX_PAGES) { pageProgress ->
+-                    onProgress((moduleIndex * 7 + pageProgress * 7 / 100).coerceIn(0, 14))
++        val tgjuJobs = modules.mapIndexed { moduleIndex, module ->
++            async {
++                kotlinx.coroutines.withTimeoutOrNull(28_000L) {
++                    fetchTgjuCatalogAll(module, maxPages = GLOBAL_TGJU_MAX_PAGES) { pageProgress ->
++                        onProgress((5 + moduleIndex * 4 + pageProgress * 4 / 100).coerceIn(5, 14))
++                    }
++                } ?: CatalogRefreshResult(emptyList(), complete = false)
++            }
++        }
++        val investingJob = async {
++            val results = linkedMapOf<String, MarketDescriptor>()
++            var failures = 0
++            var reachedLimit = false
++            val seeds = listOf("XAU", "XAG", "OIL", "BTC", "ETH", "EURUSD", "AAPL", "SPX", "NASDAQ", "MSFT", "DXY", "USOIL")
++            var processed = 0
++            seeds.chunked(4).forEach { batch ->
++                val responses = coroutineScope {
++                    batch.map { seed -> async {
++                        requestResult { CatalogRefresh.retry {
++                            searchTradingViewCatalog(seed, cancellable = true)
++                        } }
++                    } }.map { it.await() }
+                 }
+-            } }.map { it.await() }
++                responses.forEach { response ->
++                    response.onSuccess { items ->
++                        if (items.size >= TRADINGVIEW_SEARCH_LIMIT) reachedLimit = true
++                        items.forEach { results.putIfAbsent(it.id, it) }
++                    }.onFailure { failures++ }
++                    processed++
++                }
++                onProgress((15 + processed * 75 / seeds.size).coerceIn(15, 90))
++            }
++            Triple(results.values.toList(), failures, reachedLimit)
+         }
+-        moduleResults.forEach { result ->
+-            result.items.forEach { found[it.id] = it }
++        val (investingItems, investingFailures, investingCapped) = investingJob.await()
++        investingItems.forEach { found[it.id] = it }
++        tvFailures = investingFailures
++        capped = investingCapped
++        tgjuJobs.map { it.await() }.forEach { result ->
++            result.items.forEach { found.putIfAbsent(it.id, it) }
+             if (!result.complete) tgjuComplete = false
+         }
+-
+-        // TGJU provides the main global catalog. A small representative fallback search
+-        // set avoids the old 36+ serial TradingView searches that often exceeded 180s.
+-        val seeds = listOf("XAU", "XAG", "OIL", "BTC", "ETH", "EURUSD", "AAPL", "SPX", "NASDAQ", "MSFT", "DXY", "USOIL")
+-        // Four concurrent searches cap server load and avoid a long serial queue.
+-        seeds.chunked(4).forEach { batch ->
+-            val results = coroutineScope {
+-                batch.map { seed -> async {
+-                    requestResult { CatalogRefresh.retry { searchTradingViewCatalog(seed, cancellable = true) } }
+-                } }.map { it.await() }
+-            }
+-            results.forEach { result ->
+-                result.onSuccess { items ->
+-                    if (items.size >= TRADINGVIEW_SEARCH_LIMIT) capped = true
+-                    items.forEach { found.putIfAbsent(it.id, it) }
+-                }.onFailure { tvFailures++; lastFailure = it }
+-                completed++
+-            }
+-            onProgress((15 + completed * 75 / seeds.size).coerceAtMost(90))
+-            if (found.isEmpty() && tvFailures == completed && !tgjuComplete) {
+-                throw IllegalStateException("TGJU و Investing پاسخ معتبر برای بازار جهانی ندادند", lastFailure)
+-            }
+-        }
+         check(found.isNotEmpty()) { "TGJU و Investing هیچ نماد معتبری برنگرداندند" }
+         // Built-ins alone must never be evidence that a network sync succeeded.
+         TRADINGVIEW_MARKET_DESCRIPTORS.forEach { found.putIfAbsent(it.id, it) }
+@@ -1355,30 +1389,13 @@ class MarketRepository(
+ 
+         val best = if (rows != null) {
+             (0 until rows.length()).mapNotNull(rows::optJSONObject)
+-                .maxByOrNull { row ->
+-                    val symbol = row.optString("symbol").trim()
+-                    val fullName = row.optString("full_name").trim()
+-                    val description = row.optString("description").trim()
+-                    val exchange = row.optString("exchange").trim().uppercase(Locale.US)
+-                    val type = row.optString("type").trim().lowercase(Locale.US)
+-                    val symbolToken = normalizeInvestingToken(symbol)
+-                    val fullToken = normalizeInvestingToken(fullName.substringAfterLast(':'))
+-                    val queryToken = normalizeInvestingToken(query)
+-                    var score = 0
+-                    if (symbolToken == expected) score += 160
+-                    if (fullToken == expected) score += 150
+-                    if (symbolToken == queryToken) score += 130
+-                    if (fullToken == queryToken) score += 120
+-                    if (description.contains(query, true)) score += 70
+-                    if (preferredExchange.isNotBlank() && exchange == preferredExchange) score += 35
+-                    if (expected in setOf("XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY") &&
+-                        (type.contains("fx") || type.contains("currency"))) score += 40
+-                    if (expected in setOf("BTCUSD", "ETHUSD") && type.contains("crypto")) score += 40
+-                    if (expected == "UKOIL" && description.contains("brent", true)) score += 80
+-                    if (expected == "USOIL" &&
+-                        (description.contains("wti", true) || description.contains("crude oil", true))) score += 80
+-                    score
+-                }
++                .map { row -> row to GlobalInstrumentMatch.score(
++                    descriptor.sourceKey, row.optString("symbol"),
++                    row.optString("full_name"), row.optString("description"),
++                    row.optString("exchange")
++                ) }
++                .filter { (_, score) -> score > 0 }
++                .maxByOrNull { it.second }?.first
+         } else null
+ 
+         val fullName = best?.optString("full_name")?.trim().orEmpty()
+@@ -1387,7 +1404,7 @@ class MarketRepository(
+         val resolved = when {
+             fullName.isNotBlank() -> fullName
+             exchange.isNotBlank() && symbol.isNotBlank() -> "$exchange:$symbol"
+-            descriptor.sourceKey.isNotBlank() -> descriptor.sourceKey
++            // A failed or ambiguous match is not a substitute quote.
+             else -> return null
+         }
+         synchronized(investingSymbolCache) { investingSymbolCache[descriptor.sourceKey] = resolved }
+diff --git a/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt b/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
+index 3f4ae87..a069e56 100644
+--- a/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
++++ b/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
+@@ -145,19 +145,24 @@ class TradingViewStreamClient(
+             val rows = runCatching { JSONArray(get(url)) }.getOrNull()
+ 
+             val best = if (rows != null) {
+-                (0 until rows.length())
+-                    .mapNotNull(rows::optJSONObject)
+-                    .maxByOrNull { score(it, target, preferredExchange, expectedToken) }
++                (0 until rows.length()).mapNotNull(rows::optJSONObject)
++                    .map { row -> row to GlobalInstrumentMatch.score(
++                        sourceKey, row.optString("symbol"), row.optString("full_name"),
++                        row.optString("description"), row.optString("exchange")
++                    ) }
++                    .filter { (_, score) -> score > 0 }
++                    .maxByOrNull { it.second }?.first
+             } else null
+ 
+             val fullName = best?.optString("full_name")?.trim().orEmpty()
+             val exchange = best?.optString("exchange")?.trim().orEmpty()
+             val symbol = best?.optString("symbol")?.trim().orEmpty()
+ 
+-            resolved[sourceKey] = when {
+-                fullName.isNotBlank() -> fullName
+-                exchange.isNotBlank() && symbol.isNotBlank() -> "$exchange:$symbol"
+-                else -> sourceKey
++            when {
++                fullName.isNotBlank() -> resolved[sourceKey] = fullName
++                exchange.isNotBlank() && symbol.isNotBlank() -> resolved[sourceKey] = "$exchange:$symbol"
++                // Unverified identity is not a live price for this instrument.
++                else -> Unit
+             }
+         }
+     }
+diff --git a/app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt b/app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
+new file mode 100644
+index 0000000..2ae1a26
+--- /dev/null
++++ b/app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
+@@ -0,0 +1,23 @@
++package ir.personal.chand.data
++
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class GlobalInstrumentMatchTest {
++    @Test fun brentCFDMatchesItsOwnExchangeAndTicker() {
++        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "UKOIL", "TVC:UKOIL", "Brent crude oil", "TVC") > 0)
++    }
++    @Test fun brentNeverMatchesWtiEvenIfSearchDescriptionSaysOil() {
++        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "USOIL", "TVC:USOIL", "WTI crude oil", "TVC") < 0)
++    }
++    @Test fun brentNeverMatchesSameNameOnDifferentExchange() {
++        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "UKOIL", "BROKER:UKOIL", "Brent", "BROKER") < 0)
++    }
++    @Test fun brentDoesNotSilentlySwitchToIceFutures() {
++        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "BRN1!", "ICEEUR:BRN1!", "Brent Futures", "ICEEUR") < 0)
++    }
++    @Test fun fxSymbolMustMatchPair() {
++        assertTrue(GlobalInstrumentMatch.score("FX:EURUSD", "GBPUSD", "FX:GBPUSD", "FX quote", "FX") < 0)
++        assertTrue(GlobalInstrumentMatch.score("FX:EURUSD", "EURUSD", "FX:EURUSD", "Euro Dollar", "FX") > 0)
++    }
++}
