@@ -78,9 +78,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          patch -d project --dry-run -p1 < emerald_original_price_paths_only.patch
+          patch -d project -p1 < emerald_original_price_paths_only.patch
           cd project
-          git apply --check ../emerald_original_price_paths_only.patch
-          git apply ../emerald_original_price_paths_only.patch
           echo '10fb21082c0ac2d12d8b644b6d6f61822fa65185f3bba85dc2cccac9cc49808c  app/src/main/java/ir/personal/chand/data/MarketRepository.kt' | sha256sum -c -
           grep -F 'val tgjuDescriptors = descriptors.filter { it.source == MarketSource.TGJU }' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'val tsetmcDescriptors = descriptors.filter { it.source == MarketSource.TSETMC }' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
