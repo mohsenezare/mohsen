@@ -1,4 +1,4 @@
-name: Build Mohsen Restored Prices and Smoother Card Motion APK
+name: Build Mohsen Exact NYMEX Brent + Long-Press Removal APK
 on:
   push:
     branches: [main]
@@ -135,6 +135,30 @@ jobs:
           test ! -e app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
           grep -F 'placementSpec = spring(dampingRatio = 0.86f' app/src/main/java/ir/personal/chand/MainActivity.kt
           grep -F 'onProgress(4)' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+      - name: Apply exact Brent reference and safe long-press card editing
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d Mohsen-Brent-Exact-Contract-LongPress-Edit.patch.gz.b64 | gzip -dc > Mohsen-Brent-Exact-Contract-LongPress-Edit.patch
+          echo 'a19d8f5e55128a8009f9f90388723c9cfcaed3ee7fdbc349ad1aec1037f6abe1  Mohsen-Brent-Exact-Contract-LongPress-Edit.patch' | sha256sum -c -
+          cd project
+          printf '%s  %s\n' \
+            'cd44f5ab8c5869a07851acafc0de28f9993e238da4bb5ee22c508005e8aa973c' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
+            'a047cdb15d00f91801c020835cea07f0c9328cca93cdb9017eef1ef726d519b2' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+            'dc8b52f2d674b6120455bbbfaf2b3106d10e96944d6ab87e54b52dd6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
+            'c2bc6676b4bd790b13d4c60f7401400441e1160a635dff7bf9c10c028d070140' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' | sha256sum -c -
+          git apply --check ../Mohsen-Brent-Exact-Contract-LongPress-Edit.patch
+          git apply ../Mohsen-Brent-Exact-Contract-LongPress-Edit.patch
+          printf '%s  %s\n' \
+            'bb34a0d21f60de7ce61542e8ca2404a754b8d5099489c5f42f6d2ffa0e086aae' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
+            '37452871aa1295ced26fb1172a1c9394a774a237d93a0d2357b5b34b5a6878ca' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+            '2da25d416c6e0283d803d664990daed58b898eb3de5c74c6c8f6f5effe8437e6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
+            '06527da3056068d912c1e413c1ee0e867c82c85db9d2fb6583cf656297675c7e' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' \
+            'f6bd0c89ae00a3cfff2dcb497ce628ec92d4809c9c29a08a9246dfb821487811' 'app/src/main/java/ir/personal/chand/data/QuoteInstrumentIdentity.kt' \
+            '31fde6460d6f17fe8594abcd0c66315c37e1d64a6fc528fe267df5f42a9b8cbd' 'app/src/test/java/ir/personal/chand/data/QuoteInstrumentIdentityTest.kt' \
+            '59bce09e4d2fb6584a736778ebe124b8329b7515d23e57a7108ca7c98c2f9978' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' | sha256sum -c -
+          grep -F 'NYMEX:BZ1!' app/src/main/java/ir/personal/chand/data/QuoteInstrumentIdentity.kt
+          grep -F 'selectedForRemoval = item.id' app/src/main/java/ir/personal/chand/MainActivity.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -183,6 +207,12 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-restored-prices-smoother-motion-debug-apk
+          name: mohsen-nymex-brent-longpress-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: Upload full verified Android source
+        uses: actions/upload-artifact@v4
+        with:
+          name: mohsen-nymex-brent-longpress-source
+          path: project/
           if-no-files-found: error
