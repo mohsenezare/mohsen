@@ -202,6 +202,26 @@ jobs:
           grep -F 'IRAN_CATALOG_MAX_REFRESH_MS = 100_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'GLOBAL_TGJU_MAX_PAGES = 20' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'TGJU_RESOLVER_RETRY_MS = 60_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+      - name: Diagnose Brent quote endpoints without modifying app
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json,uuid
+          base='https://tvc6.investing.com/'+uuid.uuid4().hex+'/0/0/0/0/'
+          headers={'Accept':'application/json,text/plain,*/*','User-Agent':'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/124.0 Safari/537.36','Referer':'https://tvc-invdn-com.investing.com/'}
+          def probe(mode,params):
+              url=base+mode+'?'+urllib.parse.urlencode(params)
+              try:
+                  req=urllib.request.Request(url,headers=headers)
+                  with urllib.request.urlopen(req,timeout=8) as r:
+                      raw=r.read(40000).decode(errors='replace')
+                  print('PROBE',mode,str(params),'BODY',raw[:2400])
+              except Exception as e:
+                  print('PROBE',mode,str(params),'ERROR',repr(e))
+          probe('search',{'query':'Brent Oil','limit':12,'type':'','exchange':''})
+          probe('search',{'query':'UKOIL','limit':12,'type':'','exchange':''})
+          probe('quotes',{'symbols':'TVC:UKOIL,NYMEX:BZ1!,ICEEUR:BRN1!,OANDA:BCOUSD'})
+          PY
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
