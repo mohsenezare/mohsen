@@ -186,7 +186,7 @@ jobs:
           cd project
           printf '%s  %s\n' \
           'e5aacdc3cc8eb9865ccb33ce9a2608fd8a61a4e276c82a67c2eb5159338701fd' 'app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt' \
-          '2da25d416c6e0283d803d664990daed58b898eb3de5c74c6c8f6f5effe8437e6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
+          'dc8b52f2d674b6120455bbbfaf2b61216c2b3106d10e96944d6ab87e54b52dd6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
           '0219c0b2061cb2fc52eb4b01590661d6fd701b186ab76a8faa836348def597a2' 'app/src/main/java/ir/personal/chand/data/CacheMaintenance.kt' \
           '8b6041973a8fb930193154c6da8e7b18f7fb93b63a60012dbf9da027b766a3f0' 'app/src/main/java/ir/personal/chand/data/MarketQuotePolicy.kt' \
           '8c40912a2c00bc4b2c8a557e7fe252d41300e6e03b93678501bb3940e3f6506d' 'app/build.gradle.kts' \
