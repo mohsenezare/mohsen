@@ -1,0 +1,363 @@
+diff --git a/app/src/main/java/ir/personal/chand/MainActivity.kt b/app/src/main/java/ir/personal/chand/MainActivity.kt
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -105,7 +105,6 @@
+ import androidx.compose.ui.graphics.drawscope.clipPath
+ import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.layout.ContentScale
+-import androidx.compose.ui.platform.LocalConfiguration
+ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.text.style.TextOverflow
+ import androidx.compose.ui.unit.dp
+@@ -359,11 +358,9 @@
+ ) {
+     val gridState = rememberLazyGridState()
+     val density = androidx.compose.ui.platform.LocalDensity.current
+-    val configuration = LocalConfiguration.current
+-    // Keep compact cards readable: three columns on common phones, four only on wide screens.
+-    // The previous four/five-column sizing made text disproportionately tiny.
+-    val compactColumns = ((configuration.screenWidthDp - 20 + 6) / 112).coerceIn(2, 4)
+-    val gridLayout = gridMode || compactMode
++    // Third mode is a single-column, low-height horizontal quote strip.
++    // Other two layouts retain their original dimensions and drag behavior.
++    val gridLayout = gridMode && !compactMode
+     val pullRefreshConnection = remember(gridState, onPullRefresh, density) {
+         object : NestedScrollConnection {
+             private var pulled = 0f
+@@ -408,7 +405,7 @@
+         }
+     }
+     LazyVerticalGrid(
+-        columns = if (compactMode) GridCells.Fixed(compactColumns) else GridCells.Fixed(if (gridMode) 2 else 1),
++        columns = GridCells.Fixed(if (compactMode) 1 else if (gridMode) 2 else 1),
+         state = gridState,
+         contentPadding = if (compactMode) PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 8.dp)
+             else PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 10.dp),
+@@ -426,68 +423,208 @@
+     ) {
+         items(items, key = MarketItem::id) { item ->
+             var dragOffset by remember(item.id) { mutableStateOf(Offset.Zero) }
+-            MarketCard(
+-                item = item,
+-                gridMode = gridMode,
+-                compactMode = compactMode,
+-                modifier = Modifier
+-                    .fillMaxWidth()
+-                    .then(
+-                        when {
+-                            compactMode -> Modifier.aspectRatio(0.90f)
+-                            gridMode -> Modifier.aspectRatio(1.04f)
+-                            else -> Modifier.heightIn(min = 220.dp)
+-                        }
+-                    )
+-                    .pointerInput(item.id, gridMode, compactMode, compactColumns) {
+-                        detectDragGesturesAfterLongPress(
+-                            onDragStart = { dragOffset = Offset.Zero },
+-                            onDragCancel = { dragOffset = Offset.Zero },
+-                            onDragEnd = { dragOffset = Offset.Zero },
+-                            onDrag = { change, amount ->
+-                                change.consume()
+-                                dragOffset += amount
+-
+-                                val horizontalThreshold = size.width * 0.32f
+-                                val verticalThreshold = size.height * 0.32f
+-
+-                                if (gridLayout) {
+-                                    val rowStride = if (compactMode) compactColumns else 2
+-                                    when {
+-                                        dragOffset.x > horizontalThreshold -> {
+-                                            onMove(item.id, 1)
+-                                            dragOffset = Offset.Zero
+-                                        }
+-                                        dragOffset.x < -horizontalThreshold -> {
+-                                            onMove(item.id, -1)
+-                                            dragOffset = Offset.Zero
+-                                        }
+-                                        dragOffset.y > verticalThreshold -> {
+-                                            onMove(item.id, rowStride)
+-                                            dragOffset = Offset.Zero
+-                                        }
+-                                        dragOffset.y < -verticalThreshold -> {
+-                                            onMove(item.id, -rowStride)
+-                                            dragOffset = Offset.Zero
+-                                        }
++            val cardModifier = Modifier
++                .fillMaxWidth()
++                .then(
++                    when {
++                        compactMode -> Modifier.height(70.dp)
++                        gridMode -> Modifier.aspectRatio(1.04f)
++                        else -> Modifier.heightIn(min = 220.dp)
++                    }
++                )
++                .pointerInput(item.id, gridMode, compactMode) {
++                    detectDragGesturesAfterLongPress(
++                        onDragStart = { dragOffset = Offset.Zero },
++                        onDragCancel = { dragOffset = Offset.Zero },
++                        onDragEnd = { dragOffset = Offset.Zero },
++                        onDrag = { change, amount ->
++                            change.consume()
++                            dragOffset += amount
++                            val horizontalThreshold = size.width * 0.32f
++                            val verticalThreshold = size.height * 0.32f
++                            if (gridLayout) {
++                                when {
++                                    dragOffset.x > horizontalThreshold -> {
++                                        onMove(item.id, 1)
++                                        dragOffset = Offset.Zero
+                                     }
+-                                } else {
+-                                    when {
+-                                        dragOffset.y > verticalThreshold -> {
+-                                            onMove(item.id, 1)
+-                                            dragOffset = Offset.Zero
+-                                        }
+-                                        dragOffset.y < -verticalThreshold -> {
+-                                            onMove(item.id, -1)
+-                                            dragOffset = Offset.Zero
+-                                        }
++                                    dragOffset.x < -horizontalThreshold -> {
++                                        onMove(item.id, -1)
++                                        dragOffset = Offset.Zero
++                                    }
++                                    dragOffset.y > verticalThreshold -> {
++                                        onMove(item.id, 2)
++                                        dragOffset = Offset.Zero
++                                    }
++                                    dragOffset.y < -verticalThreshold -> {
++                                        onMove(item.id, -2)
++                                        dragOffset = Offset.Zero
++                                    }
++                                }
++                            } else {
++                                when {
++                                    dragOffset.y > verticalThreshold -> {
++                                        onMove(item.id, 1)
++                                        dragOffset = Offset.Zero
++                                    }
++                                    dragOffset.y < -verticalThreshold -> {
++                                        onMove(item.id, -1)
++                                        dragOffset = Offset.Zero
+                                     }
+                                 }
+                             }
++                        }
++                    )
++                }
++            if (compactMode) {
++                CompactQuoteRow(item = item, modifier = cardModifier, onClick = { onItemClick(item) })
++            } else {
++                MarketCard(
++                    item = item,
++                    gridMode = gridMode,
++                    compactMode = false,
++                    modifier = cardModifier,
++                    onClick = { onItemClick(item) }
++                )
++            }
++        }
++    }
++}
++
++/**
++ * Compact mode only. One flat, short row with deterministic RTL column order:
++ * [symbol/logo + name] [LIVE] [percent] [absolute delta + direction] [price].
++ * Never shrinks the normal list/grid cards or their typography.
++ */
++@Composable
++private fun CompactQuoteRow(
++    item: MarketItem,
++    modifier: Modifier = Modifier,
++    onClick: () -> Unit
++) {
++    val lightMode = MaterialTheme.colorScheme.background.luminance() > 0.5f
++    val primaryText = if (lightMode) Color(0xFF17191C) else Color(0xFFF4F5F6)
++    val mutedText = if (lightMode) Color(0xFF7F8289) else ChandMuted
++    val priceText = MarketFormatting.price(item)
++    val direction = when {
++        !item.isAvailable || item.change == 0.0 -> ""
++        item.change > 0.0 -> "↑"
++        else -> "↓"
++    }
++    val absoluteChange = MarketFormatting.change(item).removePrefix("↑").removePrefix("↓")
++    Card(
++        onClick = onClick,
++        modifier = modifier,
++        shape = RoundedCornerShape(14.dp),
++        colors = CardDefaults.cardColors(
++            containerColor = if (lightMode) Color(0xFFFDFDFC) else ChandCard
++        ),
++        elevation = CardDefaults.cardElevation(defaultElevation = if (lightMode) 4.dp else 0.dp)
++    ) {
++        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
++            val narrow = maxWidth < 345.dp
++            val logoSize = if (narrow) 27.dp else 30.dp
++            val fixedGap = if (narrow) 3.dp else 5.dp
++            androidx.compose.runtime.CompositionLocalProvider(
++                androidx.compose.ui.platform.LocalLayoutDirection provides androidx.compose.ui.unit.LayoutDirection.Rtl
++            ) {
++                Row(
++                    modifier = Modifier.fillMaxSize().padding(horizontal = if (narrow) 7.dp else 10.dp, vertical = 7.dp),
++                    verticalAlignment = Alignment.CenterVertically,
++                    horizontalArrangement = Arrangement.spacedBy(fixedGap)
++                ) {
++                    // Identity right: logo + Persian name and ticker code.
++                    Row(
++                        modifier = Modifier.weight(1.18f),
++                        verticalAlignment = Alignment.CenterVertically,
++                        horizontalArrangement = Arrangement.spacedBy(4.dp)
++                    ) {
++                        // Avoid logo-network lookups before the first valid quote.
++                        if (!item.isAvailable || item.origin == DataOrigin.CACHE) {
++                            SymbolSpecificFallbackBadge(item, Modifier.size(logoSize))
++                        } else {
++                            MarketCardBadge(item, Modifier.size(logoSize), denseMode = false)
++                        }
++                        Column(
++                            modifier = Modifier.weight(1f),
++                            verticalArrangement = Arrangement.spacedBy(2.dp)
++                        ) {
++                            Text(
++                                text = item.name,
++                                color = primaryText,
++                                fontWeight = FontWeight.Bold,
++                                fontSize = if (narrow) 10.sp else 11.sp,
++                                lineHeight = 13.sp,
++                                maxLines = 1,
++                                overflow = TextOverflow.Ellipsis
++                            )
++                            Text(
++                                text = item.code,
++                                color = mutedText,
++                                fontWeight = FontWeight.Medium,
++                                fontSize = if (narrow) 8.sp else 9.sp,
++                                lineHeight = 10.sp,
++                                maxLines = 1,
++                                overflow = TextOverflow.Ellipsis
++                            )
++                        }
++                    }
++                    // LIVE is exactly the existing emerald session badge and logic.
++                    Box(modifier = Modifier.width(if (narrow) 30.dp else 33.dp), contentAlignment = Alignment.Center) {
++                        MarketStatusLabel(item, compact = true)
++                    }
++                    // Consistent numeric columns, no visual jumping between updates.
++                    Box(modifier = Modifier.width(if (narrow) 44.dp else 48.dp), contentAlignment = Alignment.Center) {
++                        Text(
++                            text = compactPercent(item),
++                            color = percentColor(item),
++                            fontSize = if (narrow) 9.sp else 10.sp,
++                            fontWeight = FontWeight.Bold,
++                            maxLines = 1,
++                            softWrap = false
+                         )
+-                    },
+-                onClick = { onItemClick(item) }
+-            )
++                    }
++                    Row(
++                        modifier = Modifier.width(if (narrow) 55.dp else 62.dp),
++                        verticalAlignment = Alignment.CenterVertically,
++                        horizontalArrangement = Arrangement.Center
++                    ) {
++                        Text(
++                            text = direction,
++                            color = trendColor(item),
++                            fontSize = 13.sp,
++                            fontWeight = FontWeight.Black,
++                            maxLines = 1
++                        )
++                        Text(
++                            text = absoluteChange,
++                            color = trendColor(item),
++                            fontSize = if (narrow || absoluteChange.length > 7) 9.sp else 10.sp,
++                            fontWeight = FontWeight.SemiBold,
++                            maxLines = 1,
++                            softWrap = false,
++                            overflow = TextOverflow.Ellipsis
++                        )
++                    }
++                    Box(modifier = Modifier.weight(1.10f), contentAlignment = Alignment.CenterEnd) {
++                        Text(
++                            text = priceText,
++                            color = if (item.isAvailable) primaryText else mutedText,
++                            fontSize = when {
++                                priceText.length >= 15 -> 10.sp
++                                priceText.length >= 11 -> 11.sp
++                                narrow -> 12.sp
++                                else -> 14.sp
++                            },
++                            fontWeight = FontWeight.Black,
++                            lineHeight = 15.sp,
++                            maxLines = 1,
++                            softWrap = false,
++                            overflow = TextOverflow.Ellipsis
++                        )
++                    }
++                }
++            }
+         }
+     }
+ }
+diff --git a/app/src/main/java/ir/personal/chand/MainViewModel.kt b/app/src/main/java/ir/personal/chand/MainViewModel.kt
+--- a/app/src/main/java/ir/personal/chand/MainViewModel.kt
++++ b/app/src/main/java/ir/personal/chand/MainViewModel.kt
+@@ -123,16 +123,25 @@
+         pollingJob = viewModelScope.launch {
+             var firstLoad = _uiState.value.snapshot?.items?.none(MarketItem::isAvailable) ?: true
+             var streamsStarted = false
++            var nativeStreamsRechecked = false
+             while (isActive) {
+                 val startedAt = SystemClock.elapsedRealtime()
++                // Opening live streams must not wait for the slowest first REST quote.
++                // Existing handlers and LIVE-session logic remain unchanged.
++                if (!streamsStarted) {
++                    // TGJU/TradingView can stream immediately. TSETMC InsCodes are
++                    // reconciled by the first REST pass before starting its delta feed.
++                    startProviderStreams(includeTsetmc = false)
++                    streamsStarted = true
++                }
+                 try {
+                     refreshOnce(showInitialLoading = firstLoad)
+-                    // A first network reconciliation resolves migrated TSETMC tickers to
+-                    // stable InsCodes. Start provider streams only after that resolution.
++                    // TSETMC tickers whose numeric InsCode was resolved during the
++                    // REST request can now join the existing native delta stream.
+                     repository.knownDescriptors().forEach { descriptorCache[it.id] = it }
+-                    if (!streamsStarted) {
++                    if (!nativeStreamsRechecked) {
+                         startProviderStreams()
+-                        streamsStarted = true
++                        nativeStreamsRechecked = true
+                     }
+                 } catch (cancelled: CancellationException) {
+                     throw cancelled
+@@ -144,10 +153,6 @@
+                                 LiveConnectionState.LIVE
+                             } else LiveConnectionState.OFFLINE
+                         )
+-                    }
+-                    if (!streamsStarted) {
+-                        startProviderStreams()
+-                        streamsStarted = true
+                     }
+                 }
+                 firstLoad = false
+@@ -509,7 +514,7 @@
+     }
+ 
+ 
+-    private fun startProviderStreams() {
++    private fun startProviderStreams(includeTsetmc: Boolean = true) {
+         val visibleIds = _uiState.value.settings.visibleIds.toHashSet()
+         val visibleDescriptors = descriptorCache.values.filter { it.id in visibleIds }
+ 
+@@ -557,7 +562,7 @@
+             .filter { it.all(Char::isDigit) }
+             .distinct()
+             .toList()
+-        if (tsetmcInsCodes.isNotEmpty() && tsetmcLiveClient == null) {
++        if (includeTsetmc && tsetmcInsCodes.isNotEmpty() && tsetmcLiveClient == null) {
+             tsetmcLiveClient = repository.startTsetmcLiveStream(
+                 insCodes = tsetmcInsCodes,
+                 onState = { state ->

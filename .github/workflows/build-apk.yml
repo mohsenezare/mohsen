@@ -1,4 +1,4 @@
-name: Build Mohsen Emerald Direct Price Restore APK
+name: Build Mohsen Slim Horizontal Quotes APK
 on:
   push:
     branches: [main]
@@ -89,6 +89,20 @@ jobs:
           if grep -q 'select<ProviderFetchResult>' app/src/main/java/ir/personal/chand/data/MarketRepository.kt; then
             echo 'Invalid price select loop survived the rollback'; exit 1
           fi
+      - name: Add slim horizontal third mode and earlier native price streams
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd project
+          git apply --check ../Mohsen-Compact-Horizontal-Row-And-First-Stream.patch
+          git apply ../Mohsen-Compact-Horizontal-Row-And-First-Stream.patch
+          printf '%s  %s\n' \
+            '16db0e9f1b78cfa8e8702c5420bbe2d7ab1e8fa4543e686d08ef4cf8813f82b7' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
+            '59bce09e4d2fb6584a736778ebe124b8329b7515d23e57a7108ca7c98c2f9978' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' | sha256sum -c -
+          grep -F 'GridCells.Fixed(if (compactMode) 1' app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'Modifier.height(70.dp)' app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'private fun CompactQuoteRow(' app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'startProviderStreams(includeTsetmc = false)' app/src/main/java/ir/personal/chand/MainViewModel.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -112,17 +126,6 @@ jobs:
           grep -F 'IRAN_CATALOG_MAX_REFRESH_MS = 100_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'GLOBAL_TGJU_MAX_PAGES = 20' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'TGJU_RESOLVER_RETRY_MS = 60_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
-      - name: Export frozen-current source for isolated UI review
-        uses: actions/upload-artifact@v4
-        with:
-          name: mohsen-ui-review-frozen-source
-          path: |
-            project/app/src/main/java/ir/personal/chand/MainActivity.kt
-            project/app/src/main/java/ir/personal/chand/MainViewModel.kt
-            project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
-            project/app/src/main/java/ir/personal/chand/data/MarketModels.kt
-            project/app/src/main/java/ir/personal/chand/ui/MarketFormatting.kt
-          if-no-files-found: error
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -150,6 +153,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-emerald-price-restore-debug-apk
+          name: mohsen-slim-horizontal-quotes-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
