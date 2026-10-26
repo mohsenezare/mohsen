@@ -1,0 +1,218 @@
+diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -16,13 +16,11 @@
+ import kotlin.coroutines.resume
+ import kotlin.coroutines.resumeWithException
+ import kotlinx.coroutines.Dispatchers
+-import kotlinx.coroutines.Deferred
+ import kotlinx.coroutines.async
+ import kotlinx.coroutines.coroutineScope
+ import kotlinx.coroutines.sync.Mutex
+ import kotlinx.coroutines.sync.withLock
+ import kotlinx.coroutines.withContext
+-import kotlinx.coroutines.selects.select
+ import okhttp3.OkHttpClient
+ import okhttp3.Request
+ import okhttp3.MediaType.Companion.toMediaType
+@@ -219,8 +217,6 @@
+             ticks.forEach { tick ->
+                 descriptorsByKey[tick.sourceKey].orEmpty().forEach descriptorLoop@{ descriptor ->
+                     val previous = lastItems[descriptor.id]
+-                    if (source != MarketSource.TGJU && descriptor.id in tgjuPrimaryValidIds) return@descriptorLoop
+-                    if (!tick.change.isFinite() || !tick.changePercent.isFinite()) return@descriptorLoop
+                     if (previous != null && tick.sourceUpdatedAtMillis > 0L && previous.sourceUpdatedAtMillis > 0L && tick.sourceUpdatedAtMillis < previous.sourceUpdatedAtMillis) return@descriptorLoop
+                     val scale = descriptor.valueScale
+                     val price = tick.price * scale
+@@ -242,10 +238,9 @@
+                         liveQuoteAtMillis = tick.liveQuoteAtMillis,
+                         category = descriptor.category, unit = descriptor.unit
+                     )
+-                    val validItem = MarketQuotePolicy.normalize(item) ?: return@descriptorLoop
+-                    if (previous == null || previous.price != validItem.price || previous.sourceUpdatedAtMillis != validItem.sourceUpdatedAtMillis ||
+-                        previous.liveQuoteAtMillis != validItem.liveQuoteAtMillis || previous.origin != validItem.origin) {
+-                        lastItems[descriptor.id] = validItem
++                    if (previous == null || previous.price != item.price || previous.sourceUpdatedAtMillis != item.sourceUpdatedAtMillis ||
++                        previous.liveQuoteAtMillis != item.liveQuoteAtMillis || previous.origin != item.origin) {
++                        lastItems[descriptor.id] = item
+                         changed = true
+                     }
+                 }
+@@ -256,19 +251,18 @@
+     }
+ 
+     /**
+-     * First quote: use the original provider of each selected symbol directly.
+-     * Domestic TGJU instruments -> TGJU; TSETMC stocks -> TSETMC;
+-     * global TradingView instruments -> TradingView. Do NOT wait for a TGJU
+-     * cross-provider alias lookup or the TGJU stock-table before displaying.
+-     *
+-     * Each independent provider can publish a partial valid snapshot as soon
+-     * as it answers, while slower providers continue their own requests.
++     * Original LIVE-Emerald quote sources: TGJU, TSETMC and TradingView directly,
++     * selected solely by each instrument's original MarketDescriptor.source.
++     * No discovery aliases, provider priority, or unrelated stock catalog network
++     * calls run here. A completed native provider can publish independently of
++     * another stalled provider; the UI is never held waiting for all three.
+      */
+     suspend fun fetch(
+         visibleIds: List<String>,
+         onPartialSnapshot: ((MarketSnapshot) -> Unit)? = null
+     ): MarketSnapshot = withContext(Dispatchers.IO) {
+-        // Do not suppress direct-provider streams with a stale TGJU-priority set.
++        // Prevent stale TGJU-primary overrides from an older build suppressing
++        // TSETMC/TradingView native stream quotes.
+         tgjuPrimaryValidIds = emptySet()
+         val descriptors = resolveVisibleDescriptors(visibleIds)
+         if (descriptors.isEmpty()) return@withContext emptySnapshot()
+@@ -280,57 +274,65 @@
+             val tsetmcDescriptors = descriptors.filter { it.source == MarketSource.TSETMC }
+             val tradingViewDescriptors = descriptors.filter { it.source == MarketSource.TRADINGVIEW }
+ 
+-            val pending = linkedMapOf<Int, Deferred<ProviderFetchResult>>()
+-            if (tgjuDescriptors.isNotEmpty()) pending[0] = async {
+-                ProviderFetchResult(0, false, requestResult {
+-                    fetchTgjuItems(tgjuDescriptors, previous, receivedAt).items
+-                }.getOrDefault(emptyList()))
+-            }
+-            if (tsetmcDescriptors.isNotEmpty()) pending[1] = async {
+-                ProviderFetchResult(1, false, requestResult {
+-                    fetchTsetmcItems(tsetmcDescriptors, previous, receivedAt)
+-                }.getOrDefault(emptyList()))
+-            }
+-            if (tradingViewDescriptors.isNotEmpty()) pending[2] = async {
+-                ProviderFetchResult(2, false, requestResult {
+-                    fetchTradingViewItems(tradingViewDescriptors, previous, receivedAt)
+-                }.getOrDefault(emptyList()))
+-            }
+-
+-            while (pending.isNotEmpty()) {
+-                currentCoroutineContext().ensureActive()
+-                val result = select<ProviderFetchResult> {
+-                    pending.values.forEach { request -> request.onAwait }
+-                }
+-                pending.remove(result.key)
+-                val validItems = result.items.mapNotNull(MarketQuotePolicy::normalize)
+-                if (validItems.isEmpty()) continue
+-                synchronized(lastItems) {
+-                    validItems.forEach { incoming ->
+-                        val current = lastItems[incoming.id]
+-                        val recentLive = current?.origin == DataOrigin.LIVE &&
+-                            receivedAt - current.receivedAtMillis < LIVE_NETWORK_GRACE_MS
+-                        val incomingTime = incoming.sourceUpdatedAtMillis.takeIf { it > 0L }
+-                        val currentTime = current?.sourceUpdatedAtMillis?.takeIf { it > 0L }
+-                        val incomingIsNewer = when {
+-                            incomingTime == null -> current?.origin != DataOrigin.LIVE
+-                            currentTime == null -> true
+-                            else -> incomingTime >= currentTime
+-                        }
+-                        // A cached TGJU-first quote from an older build must not
+-                        // block the restored native provider for this symbol.
+-                        if (current == null || current.source != incoming.source ||
+-                            (!recentLive && incomingIsNewer)) {
+-                            lastItems[incoming.id] = incoming
++            // These are exactly the three original direct-source request paths.
++            val tgjuRequest = async {
++                if (tgjuDescriptors.isEmpty()) Result.success(MarketParsers.IndicatorResult(emptyList(), emptySet()))
++                else requestResult { fetchTgjuItems(tgjuDescriptors, previous, receivedAt) }
++            }
++            val tsetmcRequest = async {
++                if (tsetmcDescriptors.isEmpty()) Result.success(emptyList())
++                else requestResult { fetchTsetmcItems(tsetmcDescriptors, previous, receivedAt) }
++            }
++            val tradingViewRequest = async {
++                if (tradingViewDescriptors.isEmpty()) Result.success(emptyList())
++                else requestResult { fetchTradingViewItems(tradingViewDescriptors, previous, receivedAt) }
++            }
++
++            // Each producer completes independently. Unlike the previous select
++            // handler, these .await calls are guaranteed to consume their result;
++            // unlike awaiting TGJU first, they do not block displaying TSETMC/TV.
++            val publishMutex = Mutex()
++            suspend fun publish(items: List<MarketItem>) {
++                if (items.isEmpty()) return
++                publishMutex.withLock {
++                    currentCoroutineContext().ensureActive()
++                    var accepted = false
++                    synchronized(lastItems) {
++                        items.forEach { incoming ->
++                            if (!incoming.isAvailable || !incoming.price.isFinite() || incoming.price <= 0.0) return@forEach
++                            val current = lastItems[incoming.id]
++                            val liveIsRecent = current?.origin == DataOrigin.LIVE &&
++                                receivedAt - current.receivedAtMillis < LIVE_NETWORK_GRACE_MS
++                            val incomingTime = incoming.sourceUpdatedAtMillis.takeIf { it > 0L }
++                            val currentTime = current?.sourceUpdatedAtMillis?.takeIf { it > 0L }
++                            val incomingIsNewer = when {
++                                incomingTime == null -> current?.origin != DataOrigin.LIVE
++                                currentTime == null -> true
++                                else -> incomingTime >= currentTime
++                            }
++                            // Original Emerald freshness policy, with migration fix:
++                            // an old TGJU quote must not mask the actual native feed.
++                            if (current == null || current.source != incoming.source ||
++                                (!liveIsRecent && incomingIsNewer)) {
++                                lastItems[incoming.id] = incoming
++                                accepted = true
++                            }
+                         }
+                     }
+-                }
+-                val partial = snapshotOf(visibleIds, message = null)
+-                if (partial.items.any(MarketItem::isAvailable)) {
+-                    cacheSnapshotThrottled(partial)
+-                    onPartialSnapshot?.invoke(partial)
+-                }
+-            }
++                    if (accepted) {
++                        val partial = snapshotOf(visibleIds, message = null)
++                        cacheSnapshotThrottled(partial)
++                        onPartialSnapshot?.invoke(partial)
++                    }
++                }
++            }
++
++            val tgjuPublisher = launch { publish(tgjuRequest.await().getOrNull()?.items.orEmpty()) }
++            val tsetmcPublisher = launch { publish(tsetmcRequest.await().getOrNull().orEmpty()) }
++            val tradingViewPublisher = launch { publish(tradingViewRequest.await().getOrNull().orEmpty()) }
++            tgjuPublisher.join()
++            tsetmcPublisher.join()
++            tradingViewPublisher.join()
+ 
+             snapshotOf(visibleIds, message = null).also { snapshot ->
+                 if (snapshot.items.any(MarketItem::isAvailable)) cacheSnapshotThrottled(snapshot)
+@@ -975,8 +977,8 @@
+     ): MarketParsers.IndicatorResult {
+         val allItems = mutableListOf<MarketItem>()
+         val missing = linkedSetOf<String>()
+-        descriptors.distinctBy(MarketDescriptor::id).chunked(40).forEach { chunk ->
+-            val keys = chunk.map(MarketDescriptor::sourceKey).distinct().joinToString(",") { encode(it) }
++        descriptors.distinctBy(MarketDescriptor::sourceKey).chunked(40).forEach { chunk ->
++            val keys = chunk.joinToString(",") { encode(it.sourceKey) }
+             val parsed = MarketParsers.parseTgjuIndicators(
+                 httpGet("$TGJU_API/v1/widget/tmp?keys=$keys", 8_000),
+                 chunk,
+@@ -986,6 +988,7 @@
+             allItems += parsed.items
+             missing += parsed.missingSourceKeys
+         }
++        if (allItems.isEmpty()) error("TGJU returned no valid prices")
+         return MarketParsers.IndicatorResult(allItems, missing)
+     }
+ 
+@@ -1117,12 +1120,12 @@
+                             name = resolved.name,
+                             code = resolved.code,
+                             symbol = resolved.symbol,
+-                            receivedAtMillis = previous.receivedAtMillis,
++                            receivedAtMillis = receivedAtMillis,
+                             origin = DataOrigin.CACHE,
+                             isAvailable = true,
+-                            source = previous.source,
+-                            category = previous.category,
+-                            unit = previous.unit
++                            source = MarketSource.TSETMC,
++                            category = resolved.category,
++                            unit = resolved.unit
+                         )
+                     }
+                     val q = quote ?: error("No real TSETMC last trade")

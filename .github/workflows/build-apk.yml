@@ -1,4 +1,4 @@
-name: Build Mohsen Native Initial Quote APK
+name: Build Mohsen Emerald Direct Price Restore APK
 on:
   push:
     branches: [main]
@@ -74,6 +74,21 @@ jobs:
           grep -F 'fetchTgjuItems(tgjuDescriptors, previous, receivedAt)' "$f"
           grep -F 'fetchTsetmcItems(tsetmcDescriptors, previous, receivedAt)' "$f"
           grep -F 'fetchTradingViewItems(tradingViewDescriptors, previous, receivedAt)' "$f"
+      - name: Restore first emerald version's complete direct quote paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd project
+          git apply --check ../emerald_original_price_paths_only.patch
+          git apply ../emerald_original_price_paths_only.patch
+          echo '10fb21082c0ac2d12d8b644b6d6f61822fa65185f3bba85dc2cccac9cc49808c  app/src/main/java/ir/personal/chand/data/MarketRepository.kt' | sha256sum -c -
+          grep -F 'val tgjuDescriptors = descriptors.filter { it.source == MarketSource.TGJU }' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'val tsetmcDescriptors = descriptors.filter { it.source == MarketSource.TSETMC }' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'val tradingViewDescriptors = descriptors.filter { it.source == MarketSource.TRADINGVIEW }' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'onPartialSnapshot?.invoke(partial)' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          if grep -q 'select<ProviderFetchResult>' app/src/main/java/ir/personal/chand/data/MarketRepository.kt; then
+            echo 'Invalid price select loop survived the rollback'; exit 1
+          fi
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -124,6 +139,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-native-initial-quote-debug-apk
+          name: mohsen-emerald-price-restore-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
