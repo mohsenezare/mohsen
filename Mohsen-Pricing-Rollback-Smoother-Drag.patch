@@ -1,0 +1,191 @@
+diff --git a/app/src/main/java/ir/personal/chand/MainActivity.kt b/app/src/main/java/ir/personal/chand/MainActivity.kt
+index 7799592..dca8b2b 100644
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -17,8 +17,8 @@ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.setContent
+ import androidx.activity.enableEdgeToEdge
+ import androidx.activity.viewModels
+-import androidx.compose.animation.core.FastOutSlowInEasing
+-import androidx.compose.animation.core.tween
++import androidx.compose.animation.core.Spring
++import androidx.compose.animation.core.spring
+ import androidx.compose.foundation.Canvas
+ import androidx.compose.foundation.Image
+ import androidx.compose.foundation.background
+@@ -430,7 +430,7 @@ private fun MarketGrid(
+             val cardModifier = Modifier
+                 .animateItem(
+                     fadeInSpec = null,
+-                    placementSpec = tween(durationMillis = 330, easing = FastOutSlowInEasing),
++                    placementSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
+                     fadeOutSpec = null
+                 )
+                 .fillMaxWidth()
+diff --git a/app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt b/app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt
+deleted file mode 100644
+index 9edc197..0000000
+--- a/app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt
++++ /dev/null
+@@ -1,45 +0,0 @@
+-package ir.personal.chand.data
+-
+-import java.util.Locale
+-
+-/** A search result must identify the actual instrument, not merely mention its asset class. */
+-internal object GlobalInstrumentMatch {
+-    private val strictProducts = setOf(
+-        "UKOIL", "USOIL", "XAUUSD", "XAGUSD", "BTCUSD", "ETHUSD",
+-        "EURUSD", "GBPUSD", "USDJPY"
+-    )
+-
+-    fun score(
+-        sourceKey: String, symbol: String, fullName: String,
+-        description: String, exchange: String
+-    ): Int {
+-        val expected = normalize(sourceKey.substringAfterLast(':'))
+-        if (expected.isBlank()) return -1
+-        val actual = normalize(symbol)
+-        val full = normalize(fullName.substringAfterLast(':'))
+-        val preferredExchange = sourceKey.substringBefore(':', "").uppercase(Locale.US)
+-        val actualExchange = exchange.trim().uppercase(Locale.US)
+-        val exact = actual == expected || full == expected
+-        if (!exact) return -1
+-
+-        // CFD Brent UKOIL must never be silently replaced by WTI, an ICE
+-        // futures contract, a dated expiry or an unrelated crude oil quote.
+-        val desc = description.lowercase(Locale.US)
+-        if (expected == "UKOIL" &&
+-            (desc.contains("wti") || desc.contains("west texas") ||
+-                actual == "USOIL" || full == "USOIL")) return -1
+-        if (expected == "USOIL" &&
+-            (desc.contains("brent") || actual == "UKOIL" || full == "UKOIL")) return -1
+-
+-        // For the built-in products, the data feed/exchange is part of identity.
+-        // A similarly named instrument on another venue may have a different price.
+-        if (expected in strictProducts && preferredExchange.isNotBlank() &&
+-            actualExchange.isNotBlank() && !preferredExchange.equals(actualExchange, true) &&
+-            !fullName.startsWith("$preferredExchange:", true)) return -1
+-        return 200 + if (preferredExchange.isNotBlank() &&
+-            actualExchange == preferredExchange) 40 else 0
+-    }
+-
+-    private fun normalize(value: String): String = value.uppercase(Locale.US)
+-        .filter(Char::isLetterOrDigit)
+-}
+diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+index e374376..a388704 100644
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -1389,13 +1389,30 @@ class MarketRepository(
+ 
+         val best = if (rows != null) {
+             (0 until rows.length()).mapNotNull(rows::optJSONObject)
+-                .map { row -> row to GlobalInstrumentMatch.score(
+-                    descriptor.sourceKey, row.optString("symbol"),
+-                    row.optString("full_name"), row.optString("description"),
+-                    row.optString("exchange")
+-                ) }
+-                .filter { (_, score) -> score > 0 }
+-                .maxByOrNull { it.second }?.first
++                .maxByOrNull { row ->
++                    val symbol = row.optString("symbol").trim()
++                    val fullName = row.optString("full_name").trim()
++                    val description = row.optString("description").trim()
++                    val exchange = row.optString("exchange").trim().uppercase(Locale.US)
++                    val type = row.optString("type").trim().lowercase(Locale.US)
++                    val symbolToken = normalizeInvestingToken(symbol)
++                    val fullToken = normalizeInvestingToken(fullName.substringAfterLast(':'))
++                    val queryToken = normalizeInvestingToken(query)
++                    var score = 0
++                    if (symbolToken == expected) score += 160
++                    if (fullToken == expected) score += 150
++                    if (symbolToken == queryToken) score += 130
++                    if (fullToken == queryToken) score += 120
++                    if (description.contains(query, true)) score += 70
++                    if (preferredExchange.isNotBlank() && exchange == preferredExchange) score += 35
++                    if (expected in setOf("XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY") &&
++                        (type.contains("fx") || type.contains("currency"))) score += 40
++                    if (expected in setOf("BTCUSD", "ETHUSD") && type.contains("crypto")) score += 40
++                    if (expected == "UKOIL" && description.contains("brent", true)) score += 80
++                    if (expected == "USOIL" &&
++                        (description.contains("wti", true) || description.contains("crude oil", true))) score += 80
++                    score
++                }
+         } else null
+ 
+         val fullName = best?.optString("full_name")?.trim().orEmpty()
+@@ -1404,7 +1421,7 @@ class MarketRepository(
+         val resolved = when {
+             fullName.isNotBlank() -> fullName
+             exchange.isNotBlank() && symbol.isNotBlank() -> "$exchange:$symbol"
+-            // A failed or ambiguous match is not a substitute quote.
++            descriptor.sourceKey.isNotBlank() -> descriptor.sourceKey
+             else -> return null
+         }
+         synchronized(investingSymbolCache) { investingSymbolCache[descriptor.sourceKey] = resolved }
+diff --git a/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt b/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
+index a069e56..3f4ae87 100644
+--- a/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
++++ b/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
+@@ -145,24 +145,19 @@ class TradingViewStreamClient(
+             val rows = runCatching { JSONArray(get(url)) }.getOrNull()
+ 
+             val best = if (rows != null) {
+-                (0 until rows.length()).mapNotNull(rows::optJSONObject)
+-                    .map { row -> row to GlobalInstrumentMatch.score(
+-                        sourceKey, row.optString("symbol"), row.optString("full_name"),
+-                        row.optString("description"), row.optString("exchange")
+-                    ) }
+-                    .filter { (_, score) -> score > 0 }
+-                    .maxByOrNull { it.second }?.first
++                (0 until rows.length())
++                    .mapNotNull(rows::optJSONObject)
++                    .maxByOrNull { score(it, target, preferredExchange, expectedToken) }
+             } else null
+ 
+             val fullName = best?.optString("full_name")?.trim().orEmpty()
+             val exchange = best?.optString("exchange")?.trim().orEmpty()
+             val symbol = best?.optString("symbol")?.trim().orEmpty()
+ 
+-            when {
+-                fullName.isNotBlank() -> resolved[sourceKey] = fullName
+-                exchange.isNotBlank() && symbol.isNotBlank() -> resolved[sourceKey] = "$exchange:$symbol"
+-                // Unverified identity is not a live price for this instrument.
+-                else -> Unit
++            resolved[sourceKey] = when {
++                fullName.isNotBlank() -> fullName
++                exchange.isNotBlank() && symbol.isNotBlank() -> "$exchange:$symbol"
++                else -> sourceKey
+             }
+         }
+     }
+diff --git a/app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt b/app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
+deleted file mode 100644
+index 2ae1a26..0000000
+--- a/app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
++++ /dev/null
+@@ -1,23 +0,0 @@
+-package ir.personal.chand.data
+-
+-import org.junit.Assert.assertTrue
+-import org.junit.Test
+-
+-class GlobalInstrumentMatchTest {
+-    @Test fun brentCFDMatchesItsOwnExchangeAndTicker() {
+-        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "UKOIL", "TVC:UKOIL", "Brent crude oil", "TVC") > 0)
+-    }
+-    @Test fun brentNeverMatchesWtiEvenIfSearchDescriptionSaysOil() {
+-        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "USOIL", "TVC:USOIL", "WTI crude oil", "TVC") < 0)
+-    }
+-    @Test fun brentNeverMatchesSameNameOnDifferentExchange() {
+-        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "UKOIL", "BROKER:UKOIL", "Brent", "BROKER") < 0)
+-    }
+-    @Test fun brentDoesNotSilentlySwitchToIceFutures() {
+-        assertTrue(GlobalInstrumentMatch.score("TVC:UKOIL", "BRN1!", "ICEEUR:BRN1!", "Brent Futures", "ICEEUR") < 0)
+-    }
+-    @Test fun fxSymbolMustMatchPair() {
+-        assertTrue(GlobalInstrumentMatch.score("FX:EURUSD", "GBPUSD", "FX:GBPUSD", "FX quote", "FX") < 0)
+-        assertTrue(GlobalInstrumentMatch.score("FX:EURUSD", "EURUSD", "FX:EURUSD", "Euro Dollar", "FX") > 0)
+-    }
+-}

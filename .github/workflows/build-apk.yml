@@ -1,4 +1,4 @@
-name: Build Mohsen Catalog Stability, Brent Identity, Card Motion APK
+name: Build Mohsen Restored Prices and Smoother Card Motion APK
 on:
   push:
     branches: [main]
@@ -119,6 +119,22 @@ jobs:
           test -f app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
           grep -F 'placementSpec = tween(durationMillis = 330' app/src/main/java/ir/personal/chand/MainActivity.kt
           grep -F 'onProgress(4)' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+      - name: Restore previously working quote logic and soften drag reordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d project --dry-run -p1 < Mohsen-Pricing-Rollback-Smoother-Drag.patch
+          patch -d project -p1 < Mohsen-Pricing-Rollback-Smoother-Drag.patch
+          cd project
+          printf '%s  %s\n' \
+            'cd44f5ab8c5869a07851acafc0de28f9993e238da4bb5ee22c508005e8aa973c' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
+            'a047cdb15d00f91801c020835cea07f0c9328cca93cdb9017eef1ef726d519b2' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+            'c2bc6676b4bd790b13d4c60f7401400441e1160a635dff7bf9c10c028d070140' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' \
+            '59bce09e4d2fb6584a736778ebe124b8329b7515d23e57a7108ca7c98c2f9978' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' | sha256sum -c -
+          test ! -e app/src/main/java/ir/personal/chand/data/GlobalInstrumentMatch.kt
+          test ! -e app/src/test/java/ir/personal/chand/data/GlobalInstrumentMatchTest.kt
+          grep -F 'placementSpec = spring(dampingRatio = 0.86f' app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'onProgress(4)' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -167,6 +183,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-catalog-brent-card-motion-debug-apk
+          name: mohsen-restored-prices-smoother-motion-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
