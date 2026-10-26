@@ -93,9 +93,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          patch -d project --dry-run -p1 < Mohsen-Compact-Horizontal-Row-And-First-Stream.patch
+          patch -d project -p1 < Mohsen-Compact-Horizontal-Row-And-First-Stream.patch
           cd project
-          git apply --check ../Mohsen-Compact-Horizontal-Row-And-First-Stream.patch
-          git apply ../Mohsen-Compact-Horizontal-Row-And-First-Stream.patch
           printf '%s  %s\n' \
             '16db0e9f1b78cfa8e8702c5420bbe2d7ab1e8fa4543e686d08ef4cf8813f82b7' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
             '59bce09e4d2fb6584a736778ebe124b8329b7515d23e57a7108ca7c98c2f9978' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' | sha256sum -c -
