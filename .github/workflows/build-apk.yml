@@ -112,6 +112,17 @@ jobs:
           grep -F 'IRAN_CATALOG_MAX_REFRESH_MS = 100_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'GLOBAL_TGJU_MAX_PAGES = 20' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'TGJU_RESOLVER_RETRY_MS = 60_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+      - name: Export frozen-current source for isolated UI review
+        uses: actions/upload-artifact@v4
+        with:
+          name: mohsen-ui-review-frozen-source
+          path: |
+            project/app/src/main/java/ir/personal/chand/MainActivity.kt
+            project/app/src/main/java/ir/personal/chand/MainViewModel.kt
+            project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+            project/app/src/main/java/ir/personal/chand/data/MarketModels.kt
+            project/app/src/main/java/ir/personal/chand/ui/MarketFormatting.kt
+          if-no-files-found: error
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
