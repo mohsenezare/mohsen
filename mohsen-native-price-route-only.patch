@@ -1,7 +1,7 @@
 diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
 --- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
 +++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
-@@ -255,139 +255,83 @@
+@@ -255,139 +255,86 @@
          return snapshotOf(visibleIds).also(::cacheSnapshotThrottled)
      }
  
@@ -164,7 +164,10 @@ diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/
 +                            currentTime == null -> true
 +                            else -> incomingTime >= currentTime
 +                        }
-+                        if (current == null || (!recentLive && incomingIsNewer)) {
++                        // A cached TGJU-first quote from an older build must not
++                        // block the restored native provider for this symbol.
++                        if (current == null || current.source != incoming.source ||
++                            (!recentLive && incomingIsNewer)) {
 +                            lastItems[incoming.id] = incoming
                          }
                      }

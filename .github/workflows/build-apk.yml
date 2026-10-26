@@ -68,7 +68,7 @@ jobs:
           patch -d project --dry-run -p1 < mohsen-native-price-route-only.patch
           patch -d project -p1 < mohsen-native-price-route-only.patch
           cd project
-          echo 'b8cccbf3c8d95e0602dcc47bfc18e4ea2353555401efe2c3295378e4277156fb  app/src/main/java/ir/personal/chand/data/MarketRepository.kt' | sha256sum -c -
+          echo '5146dd1d524685db1f24a28478d75a084df99b5ed542ca4d7299d47091445b02  app/src/main/java/ir/personal/chand/data/MarketRepository.kt' | sha256sum -c -
           f=app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'tgjuPrimaryValidIds = emptySet()' "$f"
           grep -F 'fetchTgjuItems(tgjuDescriptors, previous, receivedAt)' "$f"
