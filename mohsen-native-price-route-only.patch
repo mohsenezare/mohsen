@@ -1,0 +1,195 @@
+diff --git a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -255,139 +255,83 @@
+         return snapshotOf(visibleIds).also(::cacheSnapshotThrottled)
+     }
+ 
++    /**
++     * First quote: use the original provider of each selected symbol directly.
++     * Domestic TGJU instruments -> TGJU; TSETMC stocks -> TSETMC;
++     * global TradingView instruments -> TradingView. Do NOT wait for a TGJU
++     * cross-provider alias lookup or the TGJU stock-table before displaying.
++     *
++     * Each independent provider can publish a partial valid snapshot as soon
++     * as it answers, while slower providers continue their own requests.
++     */
+     suspend fun fetch(
+         visibleIds: List<String>,
+         onPartialSnapshot: ((MarketSnapshot) -> Unit)? = null
+     ): MarketSnapshot = withContext(Dispatchers.IO) {
++        // Do not suppress direct-provider streams with a stale TGJU-priority set.
++        tgjuPrimaryValidIds = emptySet()
+         val descriptors = resolveVisibleDescriptors(visibleIds)
+         if (descriptors.isEmpty()) return@withContext emptySnapshot()
+ 
+         coroutineScope {
+             val receivedAt = System.currentTimeMillis()
+             val previous = synchronized(lastItems) { lastItems.toMap() }
+-            val stockDescriptors = descriptors.filter(::isStockDescriptor)
+-            val nativeTgjuDescriptors = descriptors.filter {
+-                it.source == MarketSource.TGJU && !isStockDescriptor(it)
+-            }
+-            val externalNonStock = descriptors.filter {
+-                it.source != MarketSource.TGJU && !isStockDescriptor(it)
+-            }
+-
+-            // Remote TGJU alias discovery stays off the critical path for the first quote.
+-            val tgjuAliases = resolveTgjuFallbackDescriptors(externalNonStock)
+-            val tgjuQueryDescriptors = (nativeTgjuDescriptors + tgjuAliases.values)
+-                .distinctBy(MarketDescriptor::id)
+-
+-            val tgjuQuotes: Deferred<ProviderFetchResult> = async {
+-                ProviderFetchResult(0, true, if (tgjuQueryDescriptors.isEmpty()) emptyList() else requestResult {
+-                    fetchTgjuItems(tgjuQueryDescriptors, previous, receivedAt).items
++            val tgjuDescriptors = descriptors.filter { it.source == MarketSource.TGJU }
++            val tsetmcDescriptors = descriptors.filter { it.source == MarketSource.TSETMC }
++            val tradingViewDescriptors = descriptors.filter { it.source == MarketSource.TRADINGVIEW }
++
++            val pending = linkedMapOf<Int, Deferred<ProviderFetchResult>>()
++            if (tgjuDescriptors.isNotEmpty()) pending[0] = async {
++                ProviderFetchResult(0, false, requestResult {
++                    fetchTgjuItems(tgjuDescriptors, previous, receivedAt).items
+                 }.getOrDefault(emptyList()))
+             }
+-            val tgjuStocks: Deferred<ProviderFetchResult> = async {
+-                ProviderFetchResult(1, true, if (stockDescriptors.isEmpty()) emptyList() else requestResult {
+-                    fetchTgjuStockItems(stockDescriptors, previous, receivedAt)
+-                }.getOrDefault(emptyList()))
+-            }
+-
+-            // Fallback providers run at the same time as TGJU. Consume whichever finishes
+-            // first so a slow provider cannot hide a valid quote from the screen.
+-            val fallbackDescriptors = buildList {
+-                descriptors.filter { it.source != MarketSource.TGJU }.forEach(::add)
+-                descriptors.filter { it.source == MarketSource.TGJU }.forEach { original ->
+-                    findKnownFallbackProvider(original)?.let { fallback ->
+-                        add(fallback.copy(
+-                            id = original.id,
+-                            name = original.name,
+-                            code = original.code,
+-                            symbol = original.symbol,
+-                            category = original.category,
+-                            unit = fallback.unit.ifBlank { original.unit }
+-                        ))
+-                    }
+-                }
+-            }.distinctBy(MarketDescriptor::id)
+-            val tsetmcDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TSETMC }
+-            val tradingViewDescriptors = fallbackDescriptors.filter { it.source == MarketSource.TRADINGVIEW }
+-            val tsetmcRequest: Deferred<ProviderFetchResult> = async {
+-                ProviderFetchResult(2, false, if (tsetmcDescriptors.isEmpty()) emptyList() else requestResult {
++            if (tsetmcDescriptors.isNotEmpty()) pending[1] = async {
++                ProviderFetchResult(1, false, requestResult {
+                     fetchTsetmcItems(tsetmcDescriptors, previous, receivedAt)
+                 }.getOrDefault(emptyList()))
+             }
+-            val tradingViewRequest: Deferred<ProviderFetchResult> = async {
+-                ProviderFetchResult(3, false, if (tradingViewDescriptors.isEmpty()) emptyList() else requestResult {
++            if (tradingViewDescriptors.isNotEmpty()) pending[2] = async {
++                ProviderFetchResult(2, false, requestResult {
+                     fetchTradingViewItems(tradingViewDescriptors, previous, receivedAt)
+                 }.getOrDefault(emptyList()))
+             }
+ 
+-            val pending = linkedMapOf(
+-                0 to tgjuQuotes,
+-                1 to tgjuStocks,
+-                2 to tsetmcRequest,
+-                3 to tradingViewRequest
+-            )
+-            val currentPrimaryIds = linkedSetOf<String>()
+-            var primaryProvidersRemaining = 2
+             while (pending.isNotEmpty()) {
+                 currentCoroutineContext().ensureActive()
+-                val providerResult = select<ProviderFetchResult> {
++                val result = select<ProviderFetchResult> {
+                     pending.values.forEach { request -> request.onAwait }
+                 }
+-                pending.remove(providerResult.key)
+-                val isPrimary = providerResult.isPrimary
+-                val providerItems = providerResult.items
+-                val validItems = if (isPrimary) {
+-                    MarketQuotePolicy.chooseByPriority(providerItems, emptyList())
+-                } else {
+-                    MarketQuotePolicy.chooseByPriority(emptyList(), providerItems)
+-                }
+-
+-                if (isPrimary) {
+-                    currentPrimaryIds += validItems.map(MarketItem::id)
+-                    primaryProvidersRemaining--
+-                    if (primaryProvidersRemaining == 0) {
+-                        tgjuPrimaryValidIds = currentPrimaryIds.toSet()
+-                    }
+-                }
+-
+-                if (validItems.isNotEmpty()) {
+-                    synchronized(lastItems) {
+-                        validItems.forEach { incoming ->
+-                            val current = lastItems[incoming.id]
+-                            val liveIsRecent = current?.origin == DataOrigin.LIVE &&
+-                                receivedAt - current.receivedAtMillis < LIVE_NETWORK_GRACE_MS
+-                            val incomingTime = incoming.sourceUpdatedAtMillis.takeIf { it > 0L }
+-                            val currentTime = current?.sourceUpdatedAtMillis?.takeIf { it > 0L }
+-                            val incomingIsNewer = when {
+-                                incomingTime == null -> current?.origin != DataOrigin.LIVE
+-                                currentTime == null -> true
+-                                else -> incomingTime >= currentTime
+-                            }
+-                            val incomingIsTgjuPrimary = incoming.source == MarketSource.TGJU &&
+-                                incoming.id in currentPrimaryIds
+-                            val currentIsTgju = current?.source == MarketSource.TGJU
+-                            val fallbackAfterTgjuMiss = incoming.id !in currentPrimaryIds &&
+-                                currentIsTgju && incoming.source != MarketSource.TGJU
+-                            if (current == null ||
+-                                (incomingIsTgjuPrimary && !currentIsTgju) ||
+-                                fallbackAfterTgjuMiss ||
+-                                (!currentIsTgju && !liveIsRecent && incomingIsNewer) ||
+-                                (currentIsTgju && incomingIsTgjuPrimary && incomingIsNewer)
+-                            ) {
+-                                lastItems[incoming.id] = incoming
+-                            }
++                pending.remove(result.key)
++                val validItems = result.items.mapNotNull(MarketQuotePolicy::normalize)
++                if (validItems.isEmpty()) continue
++                synchronized(lastItems) {
++                    validItems.forEach { incoming ->
++                        val current = lastItems[incoming.id]
++                        val recentLive = current?.origin == DataOrigin.LIVE &&
++                            receivedAt - current.receivedAtMillis < LIVE_NETWORK_GRACE_MS
++                        val incomingTime = incoming.sourceUpdatedAtMillis.takeIf { it > 0L }
++                        val currentTime = current?.sourceUpdatedAtMillis?.takeIf { it > 0L }
++                        val incomingIsNewer = when {
++                            incomingTime == null -> current?.origin != DataOrigin.LIVE
++                            currentTime == null -> true
++                            else -> incomingTime >= currentTime
++                        }
++                        if (current == null || (!recentLive && incomingIsNewer)) {
++                            lastItems[incoming.id] = incoming
+                         }
+                     }
+-                    val partial = snapshotOf(visibleIds, message = null)
+-                    if (partial.items.any(MarketItem::isAvailable)) {
+-                        cacheSnapshotThrottled(partial)
+-                        onPartialSnapshot?.invoke(partial)
+-                    }
+-                }
+-            }
+-
+-            val snapshot = snapshotOf(visibleIds, message = null)
+-            if (snapshot.items.any(MarketItem::isAvailable)) cacheSnapshotThrottled(snapshot)
+-            snapshot
++                }
++                val partial = snapshotOf(visibleIds, message = null)
++                if (partial.items.any(MarketItem::isAvailable)) {
++                    cacheSnapshotThrottled(partial)
++                    onPartialSnapshot?.invoke(partial)
++                }
++            }
++
++            snapshotOf(visibleIds, message = null).also { snapshot ->
++                if (snapshot.items.any(MarketItem::isAvailable)) cacheSnapshotThrottled(snapshot)
++            }
+         }
+     }
+ 
