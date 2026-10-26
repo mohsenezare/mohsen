@@ -1,4 +1,4 @@
-name: Build Mohsen Exact NYMEX Brent + Long-Press Removal APK
+name: Build Mohsen Brent Exact Quote Repair Only APK
 on:
   push:
     branches: [main]
@@ -181,6 +181,21 @@ jobs:
           if grep -q 'QuoteInstrumentIdentity' app/src/main/java/ir/personal/chand/data/MarketRepository.kt app/src/main/java/ir/personal/chand/data/MarketModels.kt app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt; then
             echo "Pricing-only parity failed: non-reference identity logic remains"; exit 1
           fi
+      - name: Repair missing Brent quote only with exact NYMEX scanner feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d Brent-Only-Verified-Scanner.patch.gz.b64 | gzip -dc > Brent-Only-Verified-Scanner.patch
+          echo '50797de3eec38e72e70403a925a33c9243448a78f7ab878544d2114f56433ace  Brent-Only-Verified-Scanner.patch' | sha256sum -c -
+          patch -d project --dry-run -p1 < Brent-Only-Verified-Scanner.patch
+          patch -d project -p1 < Brent-Only-Verified-Scanner.patch
+          cd project
+          printf '%s  %s\n' \
+            '534a39d010956c0e956a2df6b65c30f60a0544c48699d846caf8460c4eb99d94' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+            '7a9bd84265b2c740a82fca86275ce900078457d0dee97ba8a4f92681eeec20cc' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' \
+            '8967c4ee079c999404ccfb75ce0e619ea35eed379c08a038b0e8885bebab602d' 'app/src/main/java/ir/personal/chand/data/BrentFuturesQuote.kt' \
+            '07f44760bd5d6eb381c7cda2e0347d2927d86749e396b1a28a8b1b1ee8858c33' 'app/src/test/java/ir/personal/chand/data/BrentFuturesQuoteTest.kt' | sha256sum -c -
+          grep -F 'NYMEX:BZ1!' app/src/main/java/ir/personal/chand/data/BrentFuturesQuote.kt
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -202,26 +217,6 @@ jobs:
           grep -F 'IRAN_CATALOG_MAX_REFRESH_MS = 100_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'GLOBAL_TGJU_MAX_PAGES = 20' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'TGJU_RESOLVER_RETRY_MS = 60_000L' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
-      - name: Diagnose Brent quote endpoints without modifying app
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import urllib.request,urllib.parse,json,uuid
-          base='https://tvc6.investing.com/'+uuid.uuid4().hex+'/0/0/0/0/'
-          headers={'Accept':'application/json,text/plain,*/*','User-Agent':'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/124.0 Safari/537.36','Referer':'https://tvc-invdn-com.investing.com/'}
-          def probe(mode,params):
-              url=base+mode+'?'+urllib.parse.urlencode(params)
-              try:
-                  req=urllib.request.Request(url,headers=headers)
-                  with urllib.request.urlopen(req,timeout=8) as r:
-                      raw=r.read(40000).decode(errors='replace')
-                  print('PROBE',mode,str(params),'BODY',raw[:2400])
-              except Exception as e:
-                  print('PROBE',mode,str(params),'ERROR',repr(e))
-          probe('search',{'query':'Brent Oil','limit':12,'type':'','exchange':''})
-          probe('search',{'query':'UKOIL','limit':12,'type':'','exchange':''})
-          probe('quotes',{'symbols':'TVC:UKOIL,NYMEX:BZ1!,ICEEUR:BRN1!,OANDA:BCOUSD'})
-          PY
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -249,13 +244,13 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-original-v484-price-logic-debug-apk
+          name: mohsen-v484-pricing-brent-quote-repair-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload full verified Android source
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-original-v484-price-logic-full-source
+          name: mohsen-v484-pricing-brent-quote-repair-source
           path: |
             project/
             !project/.gradle/**
