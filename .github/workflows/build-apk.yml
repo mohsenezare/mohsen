@@ -152,13 +152,30 @@ jobs:
           printf '%s  %s\n' \
             'bb34a0d21f60de7ce61542e8ca2404a754b8d5099489c5f42f6d2ffa0e086aae' 'app/src/main/java/ir/personal/chand/MainActivity.kt' \
             '37452871aa1295ced26fb1172a1c9394a774a237d93a0d2357b5b34b5a6878ca' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
-            '2da25d416c6e0283d803d664990daed58b898eb3de5c74c6c8f6f5effe8437e6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
+            'dc8b52f2d674b6120455bbbfaf2b61216c2b3106d10e96944d6ab87e54b52dd6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
             '06527da3056068d912c1e413c1ee0e867c82c85db9d2fb6583cf656297675c7e' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' \
             'f6bd0c89ae00a3cfff2dcb497ce628ec92d4809c9c29a08a9246dfb821487811' 'app/src/main/java/ir/personal/chand/data/QuoteInstrumentIdentity.kt' \
             '31fde6460d6f17fe8594abcd0c66315c37e1d64a6fc528fe267df5f42a9b8cbd' 'app/src/test/java/ir/personal/chand/data/QuoteInstrumentIdentityTest.kt' \
             '59bce09e4d2fb6584a736778ebe124b8329b7515d23e57a7108ca7c98c2f9978' 'app/src/main/java/ir/personal/chand/MainViewModel.kt' | sha256sum -c -
           grep -F 'NYMEX:BZ1!' app/src/main/java/ir/personal/chand/data/QuoteInstrumentIdentity.kt
           grep -F 'selectedForRemoval = item.id' app/src/main/java/ir/personal/chand/MainActivity.kt
+      - name: Restore exact v4.8.4 source pricing only
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d Restore-v4.8.4-Pricing.patch.gz.b64 | gzip -dc > Restore-v4.8.4-Pricing.patch
+          patch -d project --dry-run -p1 < Restore-v4.8.4-Pricing.patch
+          patch -d project -p1 < Restore-v4.8.4-Pricing.patch
+          cd project
+          printf '%s  %s\n' \
+            '1d0ab4b39648058d3accf80a70af5c9c870eaf457b4fedc8f189248412503069' 'app/src/main/java/ir/personal/chand/data/MarketRepository.kt' \
+            'dc8b52f2d674b6120455bbbfaf2b61216c2b3106d10e96944d6ab87e54b52dd6' 'app/src/main/java/ir/personal/chand/data/MarketModels.kt' \
+            'c2bc6676b4bd790b13d4c60f7401400441e1160a635dff7bf9c10c028d070140' 'app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt' | sha256sum -c -
+          grep -F 'MarketDescriptor("brent", "TVC:UKOIL"' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'val freshItems = buildList' app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          if grep -q 'QuoteInstrumentIdentity' app/src/main/java/ir/personal/chand/data/MarketRepository.kt app/src/main/java/ir/personal/chand/data/MarketModels.kt app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt; then
+            echo "Pricing-only parity failed: non-reference identity logic remains"; exit 1
+          fi
       - name: Restore exact approved LIVE session logic
         run: cp overrides/MarketLiveStatus.kt project/app/src/main/java/ir/personal/chand/ui/MarketLiveStatus.kt
       - name: Restore exact approved session LIVE unit tests
@@ -207,13 +224,13 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-nymex-brent-longpress-debug-apk
+          name: mohsen-original-v484-price-logic-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload full verified Android source
         uses: actions/upload-artifact@v4
         with:
-          name: mohsen-nymex-brent-longpress-source
+          name: mohsen-original-v484-price-logic-full-source
           path: |
             project/
             !project/.gradle/**
