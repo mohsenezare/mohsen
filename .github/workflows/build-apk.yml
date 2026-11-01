@@ -1,7 +1,7 @@
-name: Build Chand v4.8.5 UI-Safe APK
+name: Build Chand v4.8.6 Investing + Brent APK
 on:
   push:
-    branches: [main, build/v4-8-5-ui-safe]
+    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified]
   workflow_dispatch:
 
 permissions:
@@ -229,6 +229,49 @@ jobs:
           grep -F 'versionCode = 46' project/app/build.gradle.kts
           echo 'V4.8.5_EXACT_SOURCE_PATCH_APPLIED'
 
+      - name: Apply v4.8.6 verified global data and UI updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d v486-patch/price-source-ui-cleanup.patch.gz.b64 | gzip -dc > /tmp/chand-v486.patch
+          echo 'e7819c2b40382feb6cf4566643ed9c70e94b3876d11c7477f17dc01e200cbeb5  /tmp/chand-v486.patch' | sha256sum -c -
+          patch -d project --dry-run -p1 < /tmp/chand-v486.patch
+          patch -d project -p1 < /tmp/chand-v486.patch
+          grep -F 'versionName = "4.8.6-ui-safe"' project/app/build.gradle.kts
+          grep -F 'versionCode = 47' project/app/build.gradle.kts
+          grep -F 'https://tvc6.investing.com' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          grep -F 'https://tvc6.investing.com' project/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
+          grep -F 'NYMEX:BZ1!' project/app/src/main/java/ir/personal/chand/data/BrentFuturesQuote.kt
+          test ! -e project/app/src/main/java/ir/personal/chand/data/CacheMaintenance.kt
+          if grep -R 'https://www.tradingview.com\|symbol-search.tradingview.com' project/app/src/main/java/ir/personal/chand; then
+            echo 'Unexpected old TradingView endpoint'; exit 1
+          fi
+          test "$(grep -R -l 'scanner.tradingview.com' project/app/src/main/java/ir/personal/chand | wc -l)" -eq 1
+          echo 'GLOBAL_INVESTING_AND_BRENT_ONLY_EXCEPTION_VERIFIED'
+
+      - name: Probe Investing quotes for spot gold and currency pairs (diagnostic)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, urllib.request, urllib.parse, uuid
+          url = "https://tvc6.investing.com/"+uuid.uuid4().hex+"/0/0/0/0/quotes?"+urllib.parse.urlencode({
+            "symbols":":XAU/USD,:XAG/USD,:BTC/USD,:EUR/USD"
+          })
+          req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Linux; Android 14) Chrome/126 Mobile Safari/537.36",
+            "Referer": "https://tvc-invdn-com.investing.com/",
+            "Accept": "application/json,text/plain,*/*"
+          })
+          try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+              obj = json.load(resp)
+            rows = [(r.get("n"), r.get("s"), (r.get("v") or {}).get("lp"),
+                     (r.get("v") or {}).get("close")) for r in obj.get("d",[])]
+            print("INVESTING_QUOTES_PROBE", rows)
+          except Exception as ex:
+            print("INVESTING_QUOTES_PROBE_WARNING",type(ex).__name__,str(ex))
+          PY
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -256,13 +299,13 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.8.5-UI-Safe-Debug-APK
+          name: Chand-v4.8.6-Investing-Brent-Debug-APK
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload full verified Android source
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.8.5-UI-Safe-Source
+          name: Chand-v4.8.6-Investing-Brent-Source
           path: |
             project/
             !project/.gradle/**
