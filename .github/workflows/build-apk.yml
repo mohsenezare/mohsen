@@ -282,7 +282,7 @@ jobs:
           patch -d project -p1 < /tmp/v487-separators.patch
           grep -F 'versionCode = 48' project/app/build.gradle.kts
           grep -F 'versionName = "4.8.7-thousands-separators"' project/app/build.gradle.kts
-          grep -F 'val raw = String.format(Locale.US, "%1$,.\${decimals}f", value)' project/app/src/main/java/ir/personal/chand/ui/MarketFormatting.kt
+          grep -F 'val raw = String.format(Locale.US, "%1$,.${decimals}f", value)' project/app/src/main/java/ir/personal/chand/ui/MarketFormatting.kt
           echo 'DISPLAY_ONLY_PATCH_APPLIED'
           
       - name: Set up Java 17
