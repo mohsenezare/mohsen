@@ -234,7 +234,7 @@ jobs:
         run: |
           set -euo pipefail
           base64 -d v486-patch/price-source-ui-cleanup.patch.gz.b64 | gzip -dc > /tmp/chand-v486.patch
-          echo 'e7819c2b40382feb6cf4566643ed9c70e94b3876d11c7477f17dc01e200cbeb5  /tmp/chand-v486.patch' | sha256sum -c -
+          echo '352a536bd6f80beeef1a0ddf5509215338c1f304477f85f820237e2b65bad95a  /tmp/chand-v486.patch' | sha256sum -c -
           patch -d project --dry-run -p1 < /tmp/chand-v486.patch
           patch -d project -p1 < /tmp/chand-v486.patch
           grep -F 'versionName = "4.8.6-ui-safe"' project/app/build.gradle.kts
