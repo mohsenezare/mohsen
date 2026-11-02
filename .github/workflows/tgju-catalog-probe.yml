@@ -14,13 +14,13 @@ jobs:
           import json, urllib.parse, urllib.request
           requests=[('markets.global','EUR'),('markets.global','USD'),('markets.global','GBP'),('markets.crypto','bitcoin'),('markets.global','Brent')]
           for module,query in requests:
-            url='https://api.tgju.org/v1/newsearch?'+urllib.parse.urlencode({'module':module,'page':1,'query':query})
+            url='https://api.tgju.org/v1/newsearch?'+urllib.parse.urlencode({'module':module,'page':1,'q':query})
             req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.tgju.org/','Accept':'application/json'})
             try:
               with urllib.request.urlopen(req,timeout=10) as resp:j=json.load(resp)
               print('SEARCH',module,query,'ROOT',list(j)[:6])
               r=j.get('response',{})
               print('LIST_COUNT',len(j.get('list') or []),'CATEGORY',str(j.get('category'))[:110])
-              print('SAMPLE',json.dumps((j.get('list') or [])[:4],ensure_ascii=False)[:2100])
+              print('SAMPLE',[(x.get('title'),x.get('grade'),x.get('s1'),x.get('s3')) for x in (j.get('list') or [])[:15]])
             except Exception as e:print('SEARCH_ERR',module,query,repr(e))
           PY
