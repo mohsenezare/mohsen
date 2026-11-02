@@ -272,6 +272,17 @@ jobs:
           # TGJU publishes cryptocurrencies under markets.global; markets.crypto returns HTTP 500.
           sed -i 's/listOf("markets.crypto")/listOf("markets.global")/g' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           ! grep -q 'listOf("markets.crypto")' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          # TGJU Brent catalog slug differs from the actual widget quote identifier.
+          python3 - <<'PY'
+          from pathlib import Path
+          f=Path('project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt')
+          s=f.read_text()
+          old='        val sourceKey = sequenceOf('
+          new='        val sourceKey = if (value.optString("s1").equals("energy-brent-oil", ignoreCase = true)) "oil_brent" else sequenceOf('
+          assert s.count(old)==1, "catalog source parser changed"
+          f.write_text(s.replace(old,new,1))
+          PY
+          grep -F 'energy-brent-oil' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'versionCode = 49' project/app/build.gradle.kts
           grep -F '4.8.8-tgju-unified' project/app/build.gradle.kts
           grep -F 'oil_brent' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
