@@ -269,6 +269,9 @@ jobs:
           base64 -d patches/v488-apply.py.xz.b64 | xz -dc > /tmp/v488-apply.py
           echo '31f7ae036cfa5db006e7bdf5e9ccc9c66097505977adb47ceadbdd958dae292d  /tmp/v488-apply.py' | sha256sum -c -
           python3 /tmp/v488-apply.py
+          # TGJU publishes cryptocurrencies under markets.global; markets.crypto returns HTTP 500.
+          sed -i 's/listOf("markets.crypto")/listOf("markets.global")/g' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          ! grep -q 'listOf("markets.crypto")' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
           grep -F 'versionCode = 49' project/app/build.gradle.kts
           grep -F '4.8.8-tgju-unified' project/app/build.gradle.kts
           grep -F 'oil_brent' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
