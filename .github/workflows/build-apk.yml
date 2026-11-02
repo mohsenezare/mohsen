@@ -1,7 +1,7 @@
-name: Build Chand v4.8.8 TGJU Unified APK
+name: Build Chand v4.8.9 Verified TGJU Prices APK
 on:
   push:
-    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators, fix/tgju-source-live-audit]
+    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators, fix/tgju-source-live-audit, build/v4-8-9-tgju-exact]
   workflow_dispatch:
 
 permissions:
@@ -289,6 +289,27 @@ jobs:
           grep -F 'MarketSource.TGJU' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
           echo 'TGJU_PRIMARY_QUOTES_AND_TSETMC_STOCKS_ONLY'
 
+      - name: Apply v4.8.9 exact TGJU quote-source and update fixes
+        shell: bash
+        run: |
+          set -euxo pipefail
+          base64 -d patches/v489.patch.xz.b64 | xz -dc > /tmp/chand-v489.patch
+          echo '823173d4a18625639f56a7fc66d863be78093960dafe8e8255572d34bfcebffc  /tmp/chand-v489.patch' | sha256sum -c -
+          patch -d project --dry-run -p1 < /tmp/chand-v489.patch
+          patch -d project -p1 < /tmp/chand-v489.patch
+          grep -F 'versionCode = 50' project/app/build.gradle.kts
+          grep -F '4.8.9-tgju-verified' project/app/build.gradle.kts
+          grep -F '"FX:EURUSD" to "eur-usd-ask"' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
+          grep -F '"FX:GBPUSD" to "gbp-usd-ask"' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
+          grep -F '"FX:USDJPY" to "usd-jpy-ask"' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
+          if grep -R -nE 'tvc6\.investing\.com|scanner\.tradingview\.com|symbol-search\.tradingview\.com|httpGetInvesting|startTradingViewLiveStream' project/app/src/main/java; then
+            echo 'Forbidden external price path remains'; exit 1
+          fi
+          test ! -f project/app/src/main/java/ir/personal/chand/data/TradingViewStreamClient.kt
+          test ! -f project/app/src/main/java/ir/personal/chand/data/BrentFuturesQuote.kt
+          test -f project/app/src/test/java/ir/personal/chand/data/TgjuVerifiedRoutingTest.kt
+          echo 'TGJU_ONLY_GLOBALS_TSETMC_ONLY_STOCKS_VERIFIED'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -316,13 +337,13 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.8.8-TGJU-Debug-APK
+          name: Chand-v4.8.9-TGJU-Debug-APK
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload full verified Android source
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.8.8-TGJU-Source
+          name: Chand-v4.8.9-TGJU-Full-Source
           path: |
             project/
             !project/.gradle/**
