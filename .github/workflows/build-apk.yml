@@ -1,7 +1,7 @@
-name: Build Chand v4.8.7 Thousands Separator APK
+name: Build Chand v4.8.8 TGJU Unified APK
 on:
   push:
-    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators]
+    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators, fix/tgju-source-live-audit]
   workflow_dispatch:
 
 permissions:
@@ -249,29 +249,6 @@ jobs:
           test "$(grep -R -l 'scanner.tradingview.com' project/app/src/main/java/ir/personal/chand | wc -l)" -eq 1
           echo 'GLOBAL_INVESTING_AND_BRENT_ONLY_EXCEPTION_VERIFIED'
 
-      - name: Probe Investing quotes for spot gold and currency pairs (diagnostic)
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json, urllib.request, urllib.parse, uuid
-          url = "https://tvc6.investing.com/"+uuid.uuid4().hex+"/0/0/0/0/quotes?"+urllib.parse.urlencode({
-            "symbols":":XAU/USD,:XAG/USD,:BTC/USD,:EUR/USD"
-          })
-          req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (Linux; Android 14) Chrome/126 Mobile Safari/537.36",
-            "Referer": "https://tvc-invdn-com.investing.com/",
-            "Accept": "application/json,text/plain,*/*"
-          })
-          try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-              obj = json.load(resp)
-            rows = [(r.get("n"), r.get("s"), (r.get("v") or {}).get("lp"),
-                     (r.get("v") or {}).get("close")) for r in obj.get("d",[])]
-            print("INVESTING_QUOTES_PROBE", rows)
-          except Exception as ex:
-            print("INVESTING_QUOTES_PROBE_WARNING",type(ex).__name__,str(ex))
-          PY
-
       - name: Apply only v4.8.7 thousand-separator display patch
         shell: bash
         run: |
@@ -285,6 +262,19 @@ jobs:
           grep -F 'val raw = String.format(Locale.US, "%1$,.${decimals}f", value)' project/app/src/main/java/ir/personal/chand/ui/MarketFormatting.kt
           echo 'DISPLAY_ONLY_PATCH_APPLIED'
           
+      - name: Apply TGJU verified quotes and per-card freshness repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d patches/v488-apply.py.xz.b64 | xz -dc > /tmp/v488-apply.py
+          echo '31f7ae036cfa5db006e7bdf5e9ccc9c66097505977adb47ceadbdd958dae292d  /tmp/v488-apply.py' | sha256sum -c -
+          python3 /tmp/v488-apply.py
+          grep -F 'versionCode = 49' project/app/build.gradle.kts
+          grep -F '4.8.8-tgju-unified' project/app/build.gradle.kts
+          grep -F 'oil_brent' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
+          grep -F 'MarketSource.TGJU' project/app/src/main/java/ir/personal/chand/data/TgjuGlobalRouting.kt
+          echo 'TGJU_PRIMARY_QUOTES_AND_TSETMC_STOCKS_ONLY'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -312,13 +302,13 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.8.7-Separators-Debug-APK
+          name: Chand-v4.8.8-TGJU-Debug-APK
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload full verified Android source
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.8.7-Separators-Source
+          name: Chand-v4.8.8-TGJU-Source
           path: |
             project/
             !project/.gradle/**
