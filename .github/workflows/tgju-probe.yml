@@ -13,7 +13,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import urllib.request,urllib.parse,json,time
-          keys=['ons','silver','oil_brent','crypto-bitcoin','crypto-ethereum','eurusd','gbpusd','usdjpy','eur_usd','gbp_usd','usd_jpy','price_eurusd','price_gbpusd','price_usdjpy','sp500','nasdaq','dxy']
+          keys=['ons','silver','oil_brent','oil_wti','oil_wti_crude','eur-usd-ask','gbp-usd-ask','usd-jpy-ask','eur-usd','gbp-usd','usd-jpy','crypto-bitcoin','crypto-ethereum','price_eur','price_dollar_rl','gc3','sekee','crypto-tether-irr']
           u='https://api.tgju.org/v1/widget/tmp?keys='+urllib.parse.quote(','.join(keys),safe=',')
           req=urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0 (Linux; Android 14) Chrome/127 Safari/537.36','Referer':'https://www.tgju.org/','Accept':'application/json'})
           try:
