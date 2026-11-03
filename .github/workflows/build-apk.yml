@@ -343,6 +343,17 @@ jobs:
           fi
           echo 'REMOTE_VIEW_LAYOUT_SAFE'
 
+      - name: Resolve Compose produceState Lint errors without altering price processing
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d project --dry-run -p1 < patches/v490-compose-produce-state-fix.patch
+          patch -d project -p1 < patches/v490-compose-produce-state-fix.patch
+          ! grep -q 'produceState' project/app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'LaunchedEffect(item.id, item.code)' project/app/src/main/java/ir/personal/chand/MainActivity.kt
+          grep -F 'LaunchedEffect(cacheKey)' project/app/src/main/java/ir/personal/chand/MainActivity.kt
+          echo 'COMPOSE_STATE_LIFECYCLE_LINT_SAFE'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
