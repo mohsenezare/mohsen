@@ -1,0 +1,172 @@
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -13,8 +13,8 @@
+         applicationId = "ir.personal.chand"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 52
+-        versionName = "4.9.1-restored-484-pricing"
++        versionCode = 53
++        versionName = "4.9.2-price-display-fix"
+ 
+         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+         vectorDrawables.useSupportLibrary = true
+--- a/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
++++ b/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+@@ -318,16 +318,10 @@
+             synchronized(lastItems) {
+                 freshItems.forEach { incoming ->
+                     val current = lastItems[incoming.id]?.takeIf { it.source == incoming.source }
+-                    val liveIsRecent = current?.origin == DataOrigin.LIVE &&
+-                        receivedAt - current.receivedAtMillis < LIVE_NETWORK_GRACE_MS
+-                    val incomingTime = incoming.sourceUpdatedAtMillis.takeIf { it > 0L }
+-                    val currentTime = current?.sourceUpdatedAtMillis?.takeIf { it > 0L }
+-                    val incomingIsNewer = when {
+-                        incomingTime == null -> current?.origin != DataOrigin.LIVE
+-                        currentTime == null -> true
+-                        else -> incomingTime >= currentTime
+-                    }
+-                    if (current == null || (!liveIsRecent && incomingIsNewer)) {
++                    // Compare real provider quote timestamps, not receipt-clock fallbacks.
++                    // A newer verified quote must never be rejected merely because the
++                    // previous live tick arrived during the five-second grace period.
++                    if (QuoteDisplayPolicy.shouldReplace(current, incoming, receivedAt)) {
+                         lastItems[incoming.id] = incoming
+                     }
+                 }
+@@ -1332,7 +1326,8 @@
+             val sell = InvestingQuoteFields.positive(values, "ask")
+                 ?: trustedPrevious?.sell?.takeIf { it.isFinite() && it > 0.0 } ?: price
+             val actualSourceTime = investingSourceTimestamp(values)
+-            val sourceTime = actualSourceTime ?: receivedAtMillis // original v4.8.4 snapshot timestamp
++            // Receipt time proves only when we polled, not when this trade occurred.
++            val sourceTime = actualSourceTime ?: trustedPrevious?.sourceUpdatedAtMillis ?: 0L
+ 
+             MarketItem(
+                 id = descriptor.id,
+@@ -1692,7 +1687,7 @@
+         val items = synchronized(lastItems) {
+             descriptors.map { descriptor ->
+                 lastItems[descriptor.id]
+-                    ?.takeIf { it.source == descriptor.source && descriptor.source != MarketSource.TRADINGVIEW }
++                    ?.takeIf { QuoteDisplayPolicy.matches(descriptor, it) }
+                     ?.copy(symbol = descriptor.symbol) ?: unavailableItem(descriptor)
+             }
+         }
+@@ -1872,6 +1867,8 @@
+         val items = objectList(root.opt("items")).mapNotNull { value ->
+             val id = value.optString("id")
+             val descriptor = defaultById[id] ?: synchronized(knownDescriptors) { knownDescriptors[id] }
++            val cachedSourceKey = value.optString("sourceKey")
++            if (cachedSourceKey.isNotBlank() && cachedSourceKey != descriptor?.sourceKey) return@mapNotNull null
+             val price = number(value, "price") ?: return@mapNotNull null
+             if (price <= 0.0) return@mapNotNull null
+             val history = objectList(value.opt("history")).mapNotNull { point ->
+@@ -1916,6 +1913,8 @@
+             snapshot.items.forEach { item ->
+                 put(JSONObject().apply {
+                     put("id", item.id)
++                    put("sourceKey", defaultById[item.id]?.sourceKey
++                        ?: synchronized(knownDescriptors) { knownDescriptors[item.id]?.sourceKey }.orEmpty())
+                     put("name", item.name)
+                     put("code", item.code)
+                     put("symbol", item.symbol)
+--- a/app/src/main/java/ir/personal/chand/data/InvestingStreamClient.kt
++++ b/app/src/main/java/ir/personal/chand/data/InvestingStreamClient.kt
+@@ -97,7 +97,8 @@
+                     val low = InvestingQuoteFields.positive(value, "low_price", "low") ?: price
+                     val open = InvestingQuoteFields.positive(value, "open_price", "open") ?: price
+                     val trueTimestamp = sourceTimestamp(value)
+-                    val timestamp = trueTimestamp ?: receivedAt
++                    // Never replace the provider's quote time with our local HTTP receipt time.
++                    val timestamp = trueTimestamp ?: 0L
+ 
+                     sourceKeys.forEach { sourceKey -> add(
+                         StreamTick(
+--- /dev/null
++++ b/app/src/main/java/ir/personal/chand/data/QuoteDisplayPolicy.kt
+@@ -0,0 +1,28 @@
++package ir.personal.chand.data
++
++/** Source-safe selection and reconciliation. Legacy TRADINGVIEW tag means Investing. */
++internal object QuoteDisplayPolicy {
++    fun matches(descriptor: MarketDescriptor, item: MarketItem): Boolean =
++        descriptor.id == item.id && descriptor.source == item.source &&
++            item.isAvailable && item.price.isFinite() && item.price > 0.0
++
++    fun shouldReplace(current: MarketItem?, incoming: MarketItem, now: Long): Boolean {
++        if (current == null || current.source != incoming.source) return true
++        val incomingQuote = incoming.liveQuoteAtMillis.takeIf { it > 0L }
++        val currentQuote = current.liveQuoteAtMillis.takeIf { it > 0L }
++        if (incomingQuote != null && currentQuote != null) {
++            // A provider timestamp outranks both origin and network-arrival time.
++            return incomingQuote >= currentQuote
++        }
++        if (incomingQuote != null) return true
++        if (currentQuote != null && currentQuote <= now && now - currentQuote <= 180_000L) {
++            // Unverified REST quotes cannot overwrite a recently verified trade.
++            return false
++        }
++        if (current.origin == DataOrigin.LIVE &&
++            current.receivedAtMillis > 0L && now - current.receivedAtMillis in 0L..5_000L) {
++            return false
++        }
++        return incoming.receivedAtMillis >= current.receivedAtMillis
++    }
++}
+--- /dev/null
++++ b/app/src/test/java/ir/personal/chand/data/QuoteDisplayPolicyTest.kt
+@@ -0,0 +1,53 @@
++package ir.personal.chand.data
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class QuoteDisplayPolicyTest {
++    private val now = 1_800_000_000_000L
++    private fun descriptor(source: MarketSource, id: String = "gold_world") = MarketDescriptor(
++        id, "OANDA:XAUUSD", "Gold", "XAU/USD", "GOLD", source, "طلای جهانی", "دلار")
++    private fun quote(source: MarketSource, quoteAt: Long = now, receivedAt: Long = now,
++                      origin: DataOrigin = DataOrigin.NETWORK, id: String = "gold_world") = MarketItem(
++        id, "Gold", "XAU/USD", "GOLD", 4000.0, 10.0, 0.25,
++        4010.0, 3990.0, 4000.0, 4000.0, emptyList(), quoteAt, receivedAt,
++        origin, true, source, "طلای جهانی", "دلار", quoteAt)
++
++    @Test fun investingGlobalQuoteIsShownOnItsCard() {
++        assertTrue(QuoteDisplayPolicy.matches(descriptor(MarketSource.TRADINGVIEW),
++            quote(MarketSource.TRADINGVIEW)))
++    }
++
++    @Test fun domesticAndStocksStillVisibleWithCorrectSource() {
++        for (source in MarketSource.values()) {
++            assertTrue(QuoteDisplayPolicy.matches(descriptor(source), quote(source)))
++        }
++    }
++
++    @Test fun neverShowPriceFromUnrelatedProviderOrInstrument() {
++        assertFalse(QuoteDisplayPolicy.matches(descriptor(MarketSource.TGJU),
++            quote(MarketSource.TRADINGVIEW)))
++        assertFalse(QuoteDisplayPolicy.matches(descriptor(MarketSource.TRADINGVIEW),
++            quote(MarketSource.TRADINGVIEW, id = "other")))
++    }
++
++    @Test fun newerRealNetworkQuoteWinsEvenDuringLiveGrace() {
++        val current = quote(MarketSource.TRADINGVIEW, now - 6_000, now - 100, DataOrigin.LIVE)
++        val incoming = quote(MarketSource.TRADINGVIEW, now - 1_000, now)
++        assertTrue(QuoteDisplayPolicy.shouldReplace(current, incoming, now))
++        assertFalse(QuoteDisplayPolicy.shouldReplace(incoming, current, now))
++    }
++
++    @Test fun staleOrUnverifiedRestCannotReplaceVerifiedRecentTick() {
++        val current = quote(MarketSource.TRADINGVIEW, now - 10_000, now - 1_000, DataOrigin.LIVE)
++        val incoming = quote(MarketSource.TRADINGVIEW, 0L, now)
++        assertFalse(QuoteDisplayPolicy.shouldReplace(current, incoming, now))
++    }
++
++    @Test fun newQuoteCanReplaceOldUnverifiedCache() {
++        val current = quote(MarketSource.TRADINGVIEW, 0L, now - 60_000, DataOrigin.CACHE)
++        val incoming = quote(MarketSource.TRADINGVIEW, 0L, now)
++        assertTrue(QuoteDisplayPolicy.shouldReplace(current, incoming, now))
++    }
++}
