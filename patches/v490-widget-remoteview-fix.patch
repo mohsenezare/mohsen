@@ -1,0 +1,16 @@
+--- a/app/src/main/res/layout/widget_triple.xml
++++ b/app/src/main/res/layout/widget_triple.xml
+@@ -31,5 +31,5 @@
+     </LinearLayout>
+ 
+-    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/widget_divider" />
++    <TextView android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/widget_divider" />
+ 
+     <LinearLayout
+@@ -47,5 +47,5 @@
+     </LinearLayout>
+ 
+-    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/widget_divider" />
++    <TextView android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/widget_divider" />
+ 
+     <LinearLayout
