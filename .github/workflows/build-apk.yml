@@ -1,7 +1,7 @@
-name: Build Chand v4.9.0 Investing Global Validated APK
+name: Build Chand v4.9.1 Original Price Engine Restored APK
 on:
   push:
-    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators, fix/tgju-source-live-audit, build/v4-8-9-tgju-exact, build/v4-9-0-validated-source-polling-fixes]
+    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators, fix/tgju-source-live-audit, build/v4-8-9-tgju-exact, build/v4-9-0-validated-source-polling-fixes, build/v4-9-1-restore-484-price-engine]
   workflow_dispatch:
 
 permissions:
@@ -363,6 +363,18 @@ jobs:
           grep -F 'logoUrlState.value = resolved' project/app/src/main/java/ir/personal/chand/MainActivity.kt
           echo 'COMPOSE_LOGO_STATE_COMPILE_FIX_APPLIED'
 
+      - name: Restore exact v4.8.4 source price refresh behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/restore-v484-price-engine.py project
+          grep -F 'versionCode = 52' project/app/build.gradle.kts
+          grep -F 'versionName = "4.9.1-restored-484-pricing"' project/app/build.gradle.kts
+          grep -F 'POLL_INTERVAL_MS = 1_000L' project/app/src/main/java/ir/personal/chand/data/InvestingStreamClient.kt
+          ! grep -q 'prev_close_price' project/app/src/main/java/ir/personal/chand/data/InvestingStreamClient.kt
+          ! grep -q 'pollDueSources' project/app/src/main/java/ir/personal/chand/MainViewModel.kt
+          echo 'RESTORED_484_PRICE_ENGINE_ASSERTIONS_OK'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -390,13 +402,13 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.9.0-Investing-Validated-Debug-APK
+          name: Chand-v4.9.1-Original-Pricing-Debug-APK
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload full verified Android source
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.8.9-TGJU-Full-Source
+          name: Chand-v4.9.1-Original-Pricing-Full-Source
           path: |
             project/
             !project/.gradle/**
