@@ -21,9 +21,9 @@ jobs:
               rows=get("search",{"query":q,"limit":20,"type":"","exchange":""})
               print("SEARCH",q,[(x.get("full_name"),x.get("symbol"),x.get("description"),x.get("type")) for x in rows[:12]])
             except Exception as e:print("SEARCH_ERR",q,type(e).__name__,str(e))
-          for batch in [":XAU/USD,:XAG/USD,:BTC/USD,:ETH/USD,:EUR/USD,:GBP/USD,:USD/JPY", "TVC:UKOIL,TVC:USOIL,NYMEX:BZ1!,ICEEUR:LCO1!,ICE:LCO1!,OANDA:BCOUSD"]:
+          for batch in [":XAU/USD,:XAG/USD,:BTC/USD,:ETH/USD,:EUR/USD,:GBP/USD,:USD/JPY", "ICE:LCO,ICE:LCO1!,ICEEUR:LCO1!,ICE:CL,:WTI/USD,:XBR/USD"]:
             try:
               root=get("quotes",{"symbols":batch})
-              print("QUOTES",batch,[(x.get("n"),x.get("s"),(x.get("v") or {}).get("lp"),(x.get("v") or {}).get("lp_time")) for x in root.get("d",[])])
+              print("QUOTES",batch,[(x.get("n"),x.get("s"),(x.get("v") or {}).get("lp"),(x.get("v") or {}).get("lp_time")) for x in root.get("d",[])])\n              for x in root.get("d",[]):\n                if x.get("s")=="ok":print("QUOTE_FIELDS",x.get("n"),sorted((x.get("v") or {}).keys()),"TIMES",[(k,v) for k,v in (x.get("v") or {}).items() if "time" in k or k in ("rtc","lp","ch","chp")])
             except Exception as e:print("QUOTES_ERR",batch,type(e).__name__,str(e))
           PY
