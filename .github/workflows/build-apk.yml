@@ -331,6 +331,18 @@ jobs:
           done
           echo 'REVIEWED_4_9_0_SOURCE_APPLIED'
 
+      - name: Fix legacy triple widget RemoteViews layout for lint and launchers
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '214a9c93bddfa56dd026894b8f85d5f0b3c86cbbccf83edd1abacfd1fb080df1  patches/v490-widget-remoteview-fix.patch' | sha256sum -c -
+          patch -d project --dry-run -p1 < patches/v490-widget-remoteview-fix.patch
+          patch -d project -p1 < patches/v490-widget-remoteview-fix.patch
+          if grep -R '<View ' project/app/src/main/res/layout/widget*.xml; then
+            echo 'Unsupported widget View element remains'; exit 1
+          fi
+          echo 'REMOTE_VIEW_LAYOUT_SAFE'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
