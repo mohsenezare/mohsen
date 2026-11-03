@@ -1,0 +1,41 @@
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -92,7 +92,6 @@
+ import androidx.compose.runtime.mutableLongStateOf
+ import androidx.compose.runtime.mutableStateOf
+ import androidx.compose.runtime.remember
+-import androidx.compose.runtime.produceState
+ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+@@ -943,12 +942,9 @@
+         return
+     }
+ 
+-    val logoState = androidx.compose.runtime.produceState<Bitmap?>(
+-        initialValue = null,
+-        key1 = item.id,
+-        key2 = item.code
+-    ) {
+-        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
++    val logoState = remember(item.id, item.code) { mutableStateOf<Bitmap?>(null) }
++    LaunchedEffect(item.id, item.code) {
++        logoState.value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+             TsetmcCardLogoResolver.load(item)
+         }
+     }
+@@ -1229,10 +1225,10 @@
+     modifier: Modifier = Modifier
+ ) {
+     val cacheKey = item.source.name + "|" + item.code.trim() + "|" + item.name.trim()
+-    val logoUrlState = produceState<String?>(
+-        initialValue = SymbolLogoUrlCache[cacheKey]?.takeIf(String::isNotBlank),
+-        key1 = cacheKey
+-    ) {
++    val logoUrlState = remember(cacheKey) {
++        mutableStateOf<String?>(SymbolLogoUrlCache[cacheKey]?.takeIf(String::isNotBlank))
++    }
++    LaunchedEffect(cacheKey) {
+         val resolved = SymbolLogoUrlCache[cacheKey]?.takeIf(String::isNotBlank)
+             ?: withContext(Dispatchers.IO) {
+                 runCatching { resolveMarketLogoUrl(item) }.getOrNull()
