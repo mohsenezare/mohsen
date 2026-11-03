@@ -354,6 +354,15 @@ jobs:
           grep -F 'LaunchedEffect(cacheKey)' project/app/src/main/java/ir/personal/chand/MainActivity.kt
           echo 'COMPOSE_STATE_LIFECYCLE_LINT_SAFE'
 
+      - name: Fix remaining Compose logo state assignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch -d project --dry-run -p1 < patches/v490-compose-state-value-reference.patch
+          patch -d project -p1 < patches/v490-compose-state-value-reference.patch
+          grep -F 'logoUrlState.value = resolved' project/app/src/main/java/ir/personal/chand/MainActivity.kt
+          echo 'COMPOSE_LOGO_STATE_COMPILE_FIX_APPLIED'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
