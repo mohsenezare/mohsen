@@ -1,0 +1,29 @@
+name: Probe Investing global quote identities
+on:
+  push:
+    branches: [build/v4-9-0-investing-global-tgju-domestic]
+    paths: [.github/workflows/investing-identity-probe.yml]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Investing quote keys and Brent search identity
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.parse,uuid,time
+          def get(endpoint,params):
+            url="https://tvc6.investing.com/"+uuid.uuid4().hex+"/0/0/0/0/"+endpoint+"?"+urllib.parse.urlencode(params)
+            req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 (Linux; Android 14) Chrome/126 Mobile Safari/537.36","Referer":"https://tvc-invdn-com.investing.com/","Accept":"application/json,text/plain,*/*"})
+            with urllib.request.urlopen(req,timeout=14) as f:return json.load(f)
+          for q in ["Brent Oil","UKOIL","LCO","BZ1!","Crude Oil WTI"]:
+            try:
+              rows=get("search",{"query":q,"limit":20,"type":"","exchange":""})
+              print("SEARCH",q,[(x.get("full_name"),x.get("symbol"),x.get("description"),x.get("type")) for x in rows[:12]])
+            except Exception as e:print("SEARCH_ERR",q,type(e).__name__,str(e))
+          for batch in [":XAU/USD,:XAG/USD,:BTC/USD,:ETH/USD,:EUR/USD,:GBP/USD,:USD/JPY", "TVC:UKOIL,TVC:USOIL,NYMEX:BZ1!,ICEEUR:LCO1!,ICE:LCO1!,OANDA:BCOUSD"]:
+            try:
+              root=get("quotes",{"symbols":batch})
+              print("QUOTES",batch,[(x.get("n"),x.get("s"),(x.get("v") or {}).get("lp"),(x.get("v") or {}).get("lp_time")) for x in root.get("d",[])])
+            except Exception as e:print("QUOTES_ERR",batch,type(e).__name__,str(e))
+          PY
