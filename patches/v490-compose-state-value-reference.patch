@@ -1,0 +1,11 @@
+--- a/app/src/main/java/ir/personal/chand/MainActivity.kt
++++ b/app/src/main/java/ir/personal/chand/MainActivity.kt
+@@ -1238,7 +1238,7 @@
+         } else {
+             SymbolLogoUrlCache.putIfAbsent(cacheKey, "")
+         }
+-        value = resolved
++        logoUrlState.value = resolved
+     }
+ 
+     val logoUrl = logoUrlState.value
