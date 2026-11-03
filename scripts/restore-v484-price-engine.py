@@ -71,6 +71,12 @@ s=s.replace('val sourceTime = actualSourceTime ?: previous?.sourceUpdatedAtMilli
 assert 'incomingTime == null -> current?.sourceUpdatedAtMillis?.let { it <= 0L } ?: true' in s
 s=s.replace('incomingTime == null -> current?.sourceUpdatedAtMillis?.let { it <= 0L } ?: true',
             'incomingTime == null -> current?.origin != DataOrigin.LIVE')
+# Do not compare a REST receipt timestamp to an exchange tick timestamp.
+# A five-second-old real market tick must not be rejected because REST was received just now.
+old_guard = 'previous != null && tick.sourceUpdatedAtMillis > 0L && previous.sourceUpdatedAtMillis > 0L && tick.sourceUpdatedAtMillis < previous.sourceUpdatedAtMillis'
+new_guard = 'previous != null && tick.liveQuoteAtMillis > 0L && previous.liveQuoteAtMillis > 0L && tick.liveQuoteAtMillis < previous.liveQuoteAtMillis'
+assert old_guard in s
+s=s.replace(old_guard, new_guard)
 repo.write_text(s)
 
 gradle=base/"app/build.gradle.kts"
