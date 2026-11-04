@@ -1,7 +1,7 @@
-name: Build Chand v4.9.2 Global Quote Fix APK
+name: Build Chand v4.9.3 TGJU Source-Cache Fix APK
 on:
   push:
-    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators, fix/tgju-source-live-audit, build/v4-8-9-tgju-exact, build/v4-9-0-validated-source-polling-fixes, build/v4-9-1-restore-484-price-engine, build/v4-9-2-global-quote-fix]
+    branches: [main, build/v4-8-5-ui-safe, build/v4-8-6-investing-verified, build/v4-8-7-thousands-separators, fix/tgju-source-live-audit, build/v4-8-9-tgju-exact, build/v4-9-0-validated-source-polling-fixes, build/v4-9-1-restore-484-price-engine, build/v4-9-2-global-quote-fix, build/v4-9-3-tgju-stale-batch-revalidation]
   workflow_dispatch:
 
 permissions:
@@ -391,6 +391,20 @@ jobs:
           test -f project/app/src/test/java/ir/personal/chand/data/QuoteDisplayPolicyTest.kt
           echo 'GLOBAL_SNAPSHOT_AND_QUOTE_TIME_FIX_VERIFIED'
 
+      - name: Revalidate TGJU stale batch quotes per symbol
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 -d patches/v493-tgju-stale-batch.patch.gz.b64 | gzip -dc > /tmp/chand-v493.patch
+          echo '98e5dccbeedf8d055a4b2a341f889f39091eb13a83bf711788de22392aa28cc9  /tmp/chand-v493.patch' | sha256sum -c -
+          patch -d project --dry-run -p1 < /tmp/chand-v493.patch
+          patch -d project -p1 < /tmp/chand-v493.patch
+          grep -F 'versionCode = 54' project/app/build.gradle.kts
+          grep -F '4.9.3-tgju-cache-revalidation' project/app/build.gradle.kts
+          test -f project/app/src/test/java/ir/personal/chand/data/TgjuQuoteRevalidationTest.kt
+          grep -F 'tgjuRevalidation.select' project/app/src/main/java/ir/personal/chand/data/MarketRepository.kt
+          echo 'TGJU_STALE_GROUP_INDEPENDENT_RECOVERY_PATCH_OK'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -418,13 +432,13 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.9.2-Fixed-Global-Quotes-Debug-APK
+          name: Chand-v4.9.3-TGJU-Stale-Cache-Fix-Debug-APK
           path: project/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Upload full verified Android source
         uses: actions/upload-artifact@v4
         with:
-          name: Chand-v4.9.2-Fixed-Global-Quotes-Full-Source
+          name: Chand-v4.9.3-TGJU-Stale-Cache-Fix-Full-Source
           path: |
             project/
             !project/.gradle/**
