@@ -1,0 +1,32 @@
+name: Diagnose TGJU live quote freshness and source response
+on:
+  push:
+    branches: [diagnostic/v492-tgju-freeze-20261104]
+    paths: [.github/workflows/diagnose-quotes.yml]
+  workflow_dispatch:
+jobs:
+  quote-probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe same widget endpoint as Chand on several timestamps
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request, urllib.parse, json, datetime, zoneinfo, time
+          keys=['price_dollar_rl','price_eur','geram18','sekee','crypto-tether-irr','gc3','price_aed','price_gbp','price_try']
+          print('SERVER_CLOCK',datetime.datetime.now(datetime.timezone.utc).isoformat())
+          for passno in range(3):
+            for take in [keys[:5],keys[5:]]:
+              url='https://api.tgju.org/v1/widget/tmp?keys='+','.join(take)
+              req=urllib.request.Request(url,headers={'Accept':'application/json,text/plain,*/*','Cache-Control':'no-cache','User-Agent':'Mozilla/5.0 (Linux; Android 14; Mobile)','Referer':'https://www.tgju.org/'})
+              try:
+                with urllib.request.urlopen(req,timeout=12) as res:
+                  data=json.load(res)
+                  rows=((data.get('response') or {}).get('indicators') or [])
+                  print('ROUND',passno,'HTTP',res.status,'COUNT',len(rows),'DATE',res.headers.get('Date'),'CACHE',res.headers.get('Cache-Control'))
+                  for x in rows:
+                    print('ITEM',passno,x.get('name'),'PRICE',x.get('p'),'SOURCE_TIME',x.get('updated_at'),'CHANGE',x.get('d'),'PERCENT',x.get('dp'))
+                  print('MISSING',sorted(set(take)-{x.get('name') for x in rows}))
+              except Exception as ex: print('ERROR',passno,type(ex).__name__,str(ex))
+            if passno<2:time.sleep(7)
+          PY
