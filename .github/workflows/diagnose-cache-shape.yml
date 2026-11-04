@@ -1,0 +1,32 @@
+name: Diagnose TGJU cache key batching
+on:
+  push:
+    branches: [diagnostic/v492-tgju-freeze-20261104]
+    paths: [.github/workflows/diagnose-cache-shape.yml]
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compare single keys, mixed batches, nonces and hosts
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse,json,time,datetime
+          sets=[
+            ['price_dollar_rl'],['price_eur'],['geram18'],['sekee'],['crypto-tether-irr'],
+            ['price_dollar_rl','price_aed'],['price_aed','price_dollar_rl'],
+            ['price_dollar_rl','price_eur','geram18','sekee','crypto-tether-irr'],
+            ['price_aed','price_gbp','price_dollar_rl','price_eur','geram18']
+          ]
+          for idx,keys in enumerate(sets):
+            for nonce in ([False,True] if idx in [0,7] else [False]):
+              query={'keys':','.join(keys)}
+              if nonce: query['_t']=str(int(time.time()*1000))
+              url='https://api.tgju.org/v1/widget/tmp?'+urllib.parse.urlencode(query,safe=',')
+              req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (X11; Linux x86_64) Chrome/127 Safari/537.36','Accept':'application/json','Cache-Control':'no-cache, no-store','Pragma':'no-cache','Referer':'https://www.tgju.org/'})
+              try:
+                with urllib.request.urlopen(req,timeout=13) as resp:
+                  j=json.load(resp);rows=((j.get('response') or {}).get('indicators') or [])
+                  print('TEST',idx,'NONCE',nonce,'HTTP',resp.status,'KEYS',keys,'RESPONSE',[(r.get('name'),r.get('p'),r.get('updated_at')) for r in rows])
+              except Exception as e:print('TEST_ERROR',idx,nonce,type(e).__name__,str(e))
+          PY
